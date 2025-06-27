@@ -1,0 +1,35 @@
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: anvil
+  namespace: status-go-test
+spec:
+  selector:
+    matchLabels:
+      app: anvil
+  serviceName: "anvil"
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: anvil
+    spec:
+      containers:
+        - name: anvil
+          image: ghcr.io/foundry-rs/foundry:latest
+          command: ["anvil", "--host", "0.0.0.0", "--block-time", "2"]
+          ports:
+            - containerPort: 8545
+          livenessProbe:
+            tcpSocket:
+              port: 8545
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            failureThreshold: 3
+            timeoutSeconds: 5
+          envFrom:
+            - configMapRef:
+                name: snt-config
+            - secretRef:
+                name: snt-secrets
