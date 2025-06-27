@@ -1,0 +1,50 @@
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deploy-communities-contracts
+  namespace: status-go-test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: deploy-communities-contracts
+  template:
+    metadata:
+      labels:
+        app: deploy-communities-contracts
+    spec:
+      dnsConfig:
+        searches:
+          - anvil.status-go-test.svc.cluster.local
+      containers:
+        - name: deploy-communities-contracts
+          image: zorlin/deploy-communities-contracts:latest
+          envFrom:
+            - configMapRef:
+                name: snt-config
+            - secretRef:
+                name: snt-secrets
+          command: []
+          args: ["/bin/bash", "-c", "forge script script/DeployContracts.s.sol --broadcast --fork-url=http://anvil.status-go-test:8545 --private-key=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 --sender=0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"]
+          env:
+            - name: GITHUB_ORG
+              value: "status-im"
+            - name: GITHUB_REPO
+              value: "communities-contracts"
+            - name: API_KEY_ETHERSCAN
+              valueFrom:
+                secretKeyRef:
+                  name: snt-secrets
+                  key: API_KEY_ETHERSCAN
+            - name: API_KEY_ARBISCAN
+              valueFrom:
+                secretKeyRef:
+                  name: snt-secrets
+                  key: API_KEY_ARBISCAN
+            - name: API_KEY_OPTIMISTIC_ETHERSCAN
+              valueFrom:
+                secretKeyRef:
+                  name: snt-secrets
+                  key: API_KEY_OPTIMISTIC_ETHERSCAN

@@ -1,0 +1,45 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deploy-sntv2
+  namespace: status-go-test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: deploy-sntv2
+  template:
+    metadata:
+      labels:
+        app: deploy-sntv2
+    spec:
+      dnsConfig:
+        searches:
+          - anvil.status-go-test.svc.cluster.local
+      containers:
+        - name: deploy-sntv2
+          image: zorlin/deploy-sntv2:latest
+          command: []
+          args: ["/bin/bash", "-c", "forge script script/Deploy.s.sol --broadcast --fork-url=http://anvil:8545 --private-key=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"]
+          env:
+            - name: GITHUB_ORG
+              value: "status-im"
+            - name: GITHUB_REPO
+              value: "status-network-token-v2"
+            - name: API_KEY_ETHERSCAN
+              valueFrom:
+                secretKeyRef:
+                  name: snt-secrets
+                  key: API_KEY_ETHERSCAN
+            - name: API_KEY_ARBISCAN
+              valueFrom:
+                secretKeyRef:
+                  name: snt-secrets
+                  key: API_KEY_ARBISCAN
+            - name: API_KEY_OPTIMISTIC_ETHERSCAN
+              valueFrom:
+                secretKeyRef:
+                  name: snt-secrets
+                  key: API_KEY_OPTIMISTIC_ETHERSCAN
+
