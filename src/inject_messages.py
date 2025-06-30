@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 # TODO times can get blocked by response time
-def inject_messages(pod: StatusBackend, msg_per_sec, chat_id, num_messages):
+def inject_messages(pod: StatusBackend, msg_per_sec: int, chat_id: str, num_messages: int):
     def message_sender():
         message_count = 0
         while message_count < num_messages:
