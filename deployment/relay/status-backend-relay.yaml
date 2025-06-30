@@ -78,6 +78,9 @@ spec:
             failureThreshold: 120
         - name: status-subscriber
           image: soutullostatus/status-subscriber:v1.0.0
+          env:
+            - name: WEBSOCKET_URL
+              value: "ws://localhost:3333/signals"
       volumes:
         - name: relay-config
           emptyDir: {}
