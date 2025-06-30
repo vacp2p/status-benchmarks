@@ -38,11 +38,11 @@ class StatusBackend(RpcClient, SignalClient):
     def api_request(self, method: str, data: Dict, url: str = None) -> Response:
         url = url if url else self.api_url
         url = f"{url}/{method}"
-        if enable_logging:
-            logger.debug(f"Sending POST request to url {url} with data: {json.dumps(data, sort_keys=True)}")
+
+        logger.debug(f"Sending POST request to url {url} with data: {json.dumps(data, sort_keys=True)}")
         response = requests.post(url, json=data)
-        if enable_logging:
-            logger.debug(f"Got response: {response.content}")
+
+        logger.debug(f"Got response: {response.content}")
         return response
 
     def verify_is_valid_api_response(self, response: Response):
