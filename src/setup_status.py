@@ -186,3 +186,47 @@ def _accept_community_request(node, join_id):
     chats = response.get("result", {}).get("communities", [{}])[0].get("chats", {})
     chat_id = list(chats.keys())[0] if chats else None
     return chat_id
+
+
+
+def send_friend_requests(nodes, senders, receivers):
+    # This method doesn't work great with multiple senders to multiple receivers.
+    # Better use it onl with multiple senders and a few receivers
+    with ThreadPoolExecutor(max_workers=len(senders)) as executor:
+        futures = []
+
+        for sender in senders:
+            futures.append(
+                executor.submit(_send_friend_request, nodes[sender], receivers))
+
+        for future in as_completed(futures):
+            try:
+                future.result()
+            except Exception as e:
+                logger.error(f"Sending friend request error for a node: {e}")
+                return
+
+    logger.info("Send request sent and accepted")
+
+def _send_friend_request(sender: StatusBackend, receivers: List[StatusBackend]):
+    for receiver in receivers:
+        response = sender.wakuext_service.send_contact_request(receiver.public_key, "contact request")
+        expected_message = get_message_by_content_type(response, content_type=MessageContentType.CONTACT_REQUEST.value)[0]
+        message_id = expected_message.get("id")
+        receiver.find_signal_containing_pattern(SignalType.MESSAGES_NEW.value, event_pattern=message_id)
+        response = receiver.wakuext_service.accept_contact_request(message_id)
+        logger.info("Request sent and accepted")
+
+
+def get_message_by_content_type(response, content_type, message_pattern=""):
+    matched_messages = []
+    messages = response.get("result", {}).get("messages", [])
+    for message in messages:
+        if message.get("contentType") != content_type:
+            continue
+        if not message_pattern or message_pattern in str(message):
+            matched_messages.append(message)
+    if matched_messages:
+        return matched_messages
+    else:
+        raise ValueError(f"Failed to find a message with contentType '{content_type}' in response")
