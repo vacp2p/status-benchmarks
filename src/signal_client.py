@@ -30,6 +30,7 @@ class SignalClient:
         self.url = f"{ws_url}/signals"
 
         self.await_signals = await_signals
+        # TODO: Improve delta_count explanation
         self.received_signals = {
             # For each signal type, store:
             # - list of received signals
@@ -87,6 +88,7 @@ class SignalClient:
                 raise TimeoutError(f"Signal {signal_type} is not received in {timeout} seconds")
             time.sleep(0.2)
         logging.debug(f"Signal {signal_type} is received in {round(time.time() - start_time)} seconds")
+        # TODO: Improve delta_count explanation
         delta_count = received_signals["delta_count"]
         self.prepare_wait_for_signal(signal_type, 1)
         if delta_count == 1:
