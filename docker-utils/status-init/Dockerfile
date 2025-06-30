@@ -16,7 +16,4 @@ RUN chmod +x kubectl && mv kubectl /usr/local/bin/
 # Clean up
 RUN apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
-RUN pip install websockets requests kubernetes rlp multihash base58 eth-enr eth-keys
-
 COPY init_container.py /init_container.py
