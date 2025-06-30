@@ -25,10 +25,7 @@ class RpcClient:
         except KeyError:
             raise AssertionError(f"Key '{key}' not found in the JSON response: {response.content}")
 
-    def verify_is_valid_json_rpc_response(self, response: Response, _id: str = None, skip_validation: bool = False) -> Response:
-        if skip_validation:
-            return response
-
+    def verify_is_valid_json_rpc_response(self, response: Response, _id: str = None) -> Response:
         assert response.status_code == 200, f"Got response {response.content}, status code {response.status_code}"
         assert response.content
         self._check_decode_and_key_errors_in_response(response, "result")
@@ -75,5 +72,8 @@ class RpcClient:
     def rpc_valid_request(self, method: str, params: List = None, _id: str = None, url: str = None,
                           skip_validation: bool = False, enable_logging: bool = True) -> Response:
         response = self.rpc_request(method, params, _id, url, enable_logging=enable_logging)
-        self.verify_is_valid_json_rpc_response(response, _id, skip_validation=skip_validation)
+
+        if not skip_validation:
+            self.verify_is_valid_json_rpc_response(response, _id)
+
         return response
