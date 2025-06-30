@@ -4,9 +4,12 @@ import logging
 import time
 import websocket
 import os
+from typing import List, Any, Dict, Optional
 from pathlib import Path
 from datetime import datetime
-from enum import Enum
+from websocket import WebSocketApp
+
+from src.enums import SignalType
 
 LOG_SIGNALS_TO_FILE = False
 SIGNALS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -23,7 +26,7 @@ class SignalType(Enum):
 
 
 class SignalClient:
-    def __init__(self, ws_url, await_signals):
+    def __init__(self, ws_url: str, await_signals: List[str]):
         self.url = f"{ws_url}/signals"
 
         self.await_signals = await_signals
@@ -48,7 +51,7 @@ class SignalClient:
             )
             Path(SIGNALS_DIR).mkdir(parents=True, exist_ok=True)
 
-    def on_message(self, ws, signal):
+    def on_message(self, ws: WebSocketApp, signal: str):
         signal_data = json.loads(signal)
         if LOG_SIGNALS_TO_FILE:
             self.write_signal_to_file(signal_data)
@@ -59,13 +62,13 @@ class SignalClient:
             if not accept_fn or accept_fn(signal_data):
                 self.received_signals[signal_type]["received"].append(signal_data)
 
-    def check_signal_type(self, signal_type):
+    def check_signal_type(self, signal_type: str):
         if signal_type not in self.await_signals:
             raise ValueError(f"Signal type {signal_type} is not in the list of awaited signals")
 
     # Used to set up how many instances of a signal to wait for, before triggering the actions
     # that cause them to be emitted.
-    def prepare_wait_for_signal(self, signal_type, delta_count, accept_fn=None):
+    def prepare_wait_for_signal(self, signal_type: str, delta_count: int, accept_fn=None):
         self.check_signal_type(signal_type)
 
         if delta_count < 1:
@@ -74,7 +77,7 @@ class SignalClient:
         self.received_signals[signal_type]["expected_count"] = len(self.received_signals[signal_type]["received"]) + delta_count
         self.received_signals[signal_type]["accept_fn"] = accept_fn
 
-    def wait_for_signal(self, signal_type, timeout=20):
+    def wait_for_signal(self, signal_type: str, timeout: int = 20) -> Dict | List[Dict]:
         self.check_signal_type(signal_type)
 
         start_time = time.time()
@@ -90,7 +93,7 @@ class SignalClient:
             return self.received_signals[signal_type]["received"][-1]
         return self.received_signals[signal_type]["received"][-delta_count:]
 
-    def wait_for_login(self):
+    def wait_for_login(self) -> Dict:
         signal = self.wait_for_signal(SignalType.NODE_LOGIN.value)
         if "error" in signal["event"]:
             error_details = signal["event"]["error"]
@@ -98,11 +101,11 @@ class SignalClient:
         self.node_login_event = signal
         return signal
 
-    def wait_for_logout(self):
+    def wait_for_logout(self) -> Dict:
         signal = self.wait_for_signal(SignalType.NODE_LOGOUT.value)
         return signal
 
-    def find_signal_containing_pattern(self, signal_type, event_pattern, timeout=20):
+    def find_signal_containing_pattern(self, signal_type: str, event_pattern, timeout=20) -> Optional[Dict]:
         start_time = time.time()
         while True:
             if time.time() - start_time >= timeout:
@@ -116,13 +119,13 @@ class SignalClient:
                     return event
             time.sleep(0.2)
 
-    def _on_error(self, ws, error):
+    def _on_error(self, ws: WebSocketApp, error: Any):
         logging.error(f"Error: {error}")
 
-    def _on_close(self, ws, close_status_code, close_msg):
+    def _on_close(self, ws: WebSocketApp, close_status_code: Any, close_msg: Any):
         logging.info(f"Connection closed: {close_status_code}, {close_msg}")
 
-    def _on_open(self, ws):
+    def _on_open(self, ws: WebSocketApp):
         logging.info("Connection opened")
 
     def _connect(self):
@@ -135,7 +138,7 @@ class SignalClient:
         ws.on_open = self._on_open
         ws.run_forever()
 
-    def write_signal_to_file(self, signal_data):
+    def write_signal_to_file(self, signal_data: Dict):
         with open(self.signal_file_path, "a+") as file:
             json.dump(signal_data, file)
             file.write("\n")
