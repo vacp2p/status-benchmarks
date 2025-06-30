@@ -87,6 +87,8 @@ def login_node(node: StatusBackend):
         key_uid = node.find_key_uid()
         node.login(key_uid)
         node.wait_for_login()
+        node.wakuext_service.start_messenger()
+        node.wallet_service.start_wallet()
     except Exception as e:
         logger.error(f"Error logging out node {node}: {e}")
         raise
