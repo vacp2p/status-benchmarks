@@ -67,7 +67,7 @@ class StatusBackend(RpcClient, SignalClient):
         try:
             self.logout()
             logger.debug("successfully logged out")
-        except Exception:
+        except AssertionError:
             logger.debug("failed to log out")
             pass
 
