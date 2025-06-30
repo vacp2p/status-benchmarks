@@ -107,17 +107,17 @@ class SignalClient:
         signal = self.wait_for_signal(SignalType.NODE_LOGOUT.value)
         return signal
 
-    def find_signal_containing_pattern(self, signal_type: str, event_pattern, timeout=20) -> Optional[Dict]:
+    def find_signal_containing_string(self, signal_type: str, event_string: str, timeout=20) -> Optional[Dict]:
         start_time = time.time()
         while True:
             if time.time() - start_time >= timeout:
-                raise TimeoutError(f"Signal {signal_type} containing {event_pattern} is not received in {timeout} seconds")
+                raise TimeoutError(f"Signal {signal_type} containing {event_string} is not received in {timeout} seconds")
             if not self.received_signals.get(signal_type):
                 time.sleep(0.2)
                 continue
             for event in self.received_signals[signal_type]["received"]:
-                if event_pattern in json.dumps(event):
-                    logging.info(f"Signal {signal_type} containing {event_pattern} is received in {round(time.time() - start_time)} seconds")
+                if event_string in json.dumps(event):
+                    logging.info(f"Signal {signal_type} containing {event_string} is received in {round(time.time() - start_time)} seconds")
                     return event
             time.sleep(0.2)
 
