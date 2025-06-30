@@ -1,0 +1,80 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: controlbox-sa
+  namespace: status-go-test
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: statefulset-viewer
+  namespace: status-go-test
+rules:
+- apiGroups: ["apps"]
+  resources: ["statefulsets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: controlbox-statefulset-viewer
+  namespace: status-go-test
+subjects:
+- kind: ServiceAccount
+  name: controlbox-sa
+  namespace: status-go-test
+roleRef:
+  kind: Role
+  name: statefulset-viewer
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: controlbox
+  namespace: status-go-test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: controlbox
+  template:
+    metadata:
+      labels:
+        app: controlbox
+    spec:
+      dnsConfig:
+        searches:
+          - status-service-node.status-go-test.svc.cluster.local
+          - status-service-bootstrap.status-go-test.svc.cluster.local
+          - status-backend-light.status-go-test.svc.cluster.local
+          - status-backend-relay.status-go-test.svc.cluster.local
+      serviceAccountName: controlbox-sa
+      containers:
+      - name: controlbox
+        image: soutullostatus/controlbox-status:v1.0.0
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 22
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          apt-get update && apt-get install -y curl && \
+          curl -LO "https://dl.k8s.io/release/stable.txt" && \
+          curl -LO "https://dl.k8s.io/release/$(cat stable.txt)/bin/linux/amd64/kubectl" && \
+          chmod +x kubectl && \
+          mv kubectl /usr/local/bin/ && \
+          /usr/sbin/sshd -D
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: controlbox-service
+  namespace: status-go-test
+spec:
+  clusterIP: None
+  selector:
+    app: controlbox
