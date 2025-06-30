@@ -1,4 +1,5 @@
 # Python Imports
+from typing import Dict
 
 # Project Imports
 from src.rpc_client import RpcClient
@@ -9,10 +10,10 @@ class AccountService(Service):
     def __init__(self, client: RpcClient):
         super().__init__(client, "accounts")
 
-    def get_accounts(self):
+    def get_accounts(self) -> Dict:
         response = self.rpc_request("getAccounts")
         return response.json()
 
-    def get_account_keypairs(self):
+    def get_account_keypairs(self) -> Dict:
         response = self.rpc_request("getKeypairs")
         return response.json()
