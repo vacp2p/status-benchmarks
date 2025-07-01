@@ -26,7 +26,7 @@ def inject_messages(pod: StatusBackend, msg_per_sec: int, chat_id: str, num_mess
 
                 time.sleep(1 / msg_per_sec)
 
-            except Exception as e:
+            except AssertionError as e:
                 logger.error(f"Error sending message: {e}")
                 time.sleep(1)
 
