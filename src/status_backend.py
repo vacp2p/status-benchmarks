@@ -146,7 +146,7 @@ class StatusBackend(RpcClient, SignalClient):
         method = "Logout"
         return self.api_valid_request(method, {})
 
-    def find_public_key(self):
+    def set_public_key(self):
         self.public_key = self.node_login_event.get("event", {}).get("settings", {}).get("public-key")
 
     def find_key_uid(self) -> str:
