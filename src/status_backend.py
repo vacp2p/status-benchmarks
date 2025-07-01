@@ -62,7 +62,7 @@ class StatusBackend(RpcClient, SignalClient):
         self.verify_is_valid_api_response(response)
         return response
 
-    def init_status_backend(self) -> Response:
+    def start_status_backend(self) -> Response:
         logger.debug("Automatically logging out before InitializeApplication")
         try:
             self.logout()
