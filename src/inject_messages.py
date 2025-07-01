@@ -9,7 +9,7 @@ from src.status_backend import StatusBackend
 logger = logging.getLogger(__name__)
 
 
-# TODO times can get blocked by response time
+# TODO times can get blocked by response time of the other node. Improve with true concurrency.
 def inject_messages(pod: StatusBackend, msg_per_sec: int, chat_id: str, num_messages: int):
     def message_sender():
         message_count = 0
