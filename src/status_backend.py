@@ -147,6 +147,7 @@ class StatusBackend(RpcClient, SignalClient):
         return self.api_valid_request(method, {})
 
     def set_public_key(self):
+        # Only make sense to call this method if the lodes are logged in, otherwise public_key will be set to None.
         self.public_key = self.node_login_event.get("event", {}).get("settings", {}).get("public-key")
 
     def find_key_uid(self) -> str:
