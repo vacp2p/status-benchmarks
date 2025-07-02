@@ -36,19 +36,18 @@ def initialize_nodes_application(pod_names: list[str], wakuV2LightClient=False):
 
 
 
-def join_nodes_to_community(backend_nodes: Dict, owner: StatusBackend, nodes_to_join, community_id):
+def request_join_nodes_to_community(backend_nodes: Dict, nodes_to_join, community_id):
     join_ids = []
 
-    with ThreadPoolExecutor(max_workers=len(nodes_to_join)) as executor:  # Concurrency for multiple pods
+    with ThreadPoolExecutor(max_workers=len(nodes_to_join)) as executor:
         futures = []
 
         for node in nodes_to_join:
             selected_node = backend_nodes[node]
             futures.append(
-                executor.submit(_join_community_on_node, selected_node, community_id))  # One signal per backend
+                executor.submit(_join_community_on_node, selected_node, community_id))
 
-        # Wait for all initialization tasks to complete
-        for future in as_completed(futures):  # Use concurrent.futures.as_completed here
+        for future in as_completed(futures):
             try:
                 join_id = future.result()
                 join_ids.append(join_id)
@@ -56,14 +55,8 @@ def join_nodes_to_community(backend_nodes: Dict, owner: StatusBackend, nodes_to_
                 logger.error(f"Initialization error for a node: {e}")
                 return
 
-    logger.info(f"All {len(nodes_to_join)} nodes have sent join community request")
+    return join_ids
 
-    chat_ids = _accept_community_requests(owner, join_ids)
-
-    logger.info(f"All {len(chat_ids)} nodes have accepted community request")
-    logger.info(f"Chat IDs: {chat_ids}")
-
-    return chat_ids
 
 
 def login_nodes(backend_nodes: Dict, include: List[str]):
@@ -128,11 +121,11 @@ def _init_status(nodes_status, pod_name, wakuV2LightClient):
         status_backend = StatusBackend(url=f"http://{pod_name}:3333",
                                        await_signals=["messages.new", "message.delivered", "node.ready", "node.started",
                                                       "node.login", "node.stopped"])
-        status_backend.init_status_backend()
+        status_backend.start_status_backend()
         nodes_status[pod_name.split(".")[0]] = status_backend
         status_backend.create_account_and_login(wakuV2LightClient=wakuV2LightClient)
         status_backend.wait_for_login()
-        status_backend.find_public_key()
+        status_backend.set_public_key()
         status_backend.wakuext_service.start_messenger()
         status_backend.wallet_service.start_wallet()
     except Exception as e:
@@ -148,26 +141,40 @@ def _join_community_on_node(node, community_id) -> str:
     return join_id
 
 
-def _accept_community_requests(node_owner, join_ids):
+def accept_community_requests(node_owner, join_ids):
     chat_ids = []
-    with ThreadPoolExecutor(max_workers=len(join_ids)) as executor:  # Concurrency for multiple pods
+    with ThreadPoolExecutor(max_workers=len(join_ids)) as executor:
         futures = []
 
         for join_id in join_ids:
             futures.append(
-                executor.submit(_accept_community_request, node_owner, join_id))  # One signal per backend
+                executor.submit(_accept_community_request, node_owner, join_id))
 
-        # Wait for all initialization tasks to complete
-        for future in as_completed(futures):  # Use concurrent.futures.as_completed here
+        for future in as_completed(futures):
             try:
                 chat_id = future.result()
                 chat_ids.append(chat_id)
             except Exception as e:
-                logger.error(f"Initialization error for a node: {e}")
+                logger.error(f"Acceptance error for a node: {e}")
                 return
 
-    return chat_ids
+    return chat_ids[0]
 
+def reject_community_requests(node_owner, join_ids):
+    with ThreadPoolExecutor(max_workers=len(join_ids)) as executor:
+        futures = []
+
+        for join_id in join_ids:
+            futures.append(
+                executor.submit(_reject_community_request, node_owner, join_id))
+
+        for future in as_completed(futures):
+            try:
+                _ = future.result()
+                # TODO CHECK _
+            except Exception as e:
+                logger.error(f"Rejection error for a node: {e}")
+                return
 
 def _accept_community_request(node, join_id):
     max_retries = 40
@@ -187,6 +194,19 @@ def _accept_community_request(node, join_id):
     chat_id = list(chats.keys())[0] if chats else None
     return chat_id
 
+def _reject_community_request(node, join_id):
+    max_retries = 40
+    retry_interval = 0.5
+    for attempt in range(max_retries):
+        try:
+            response = node.wakuext_service.reject_request_to_join_community(join_id)
+            if response.get("result"):
+                break
+        except Exception as e:
+            logging.error(f"Attempt {attempt + 1}/{max_retries}: Unexpected error: {e}")
+            time.sleep(retry_interval)
+    else:
+        raise Exception(f"Failed to reject request to join community in {max_retries * retry_interval} seconds.")
 
 
 def send_friend_requests(nodes, senders, receivers):
@@ -213,7 +233,7 @@ def _send_friend_request(sender: StatusBackend, receivers: List[StatusBackend]):
         response = sender.wakuext_service.send_contact_request(receiver.public_key, "contact request")
         expected_message = get_message_by_content_type(response, content_type=MessageContentType.CONTACT_REQUEST.value)[0]
         message_id = expected_message.get("id")
-        receiver.find_signal_containing_pattern(SignalType.MESSAGES_NEW.value, event_pattern=message_id)
+        receiver.find_signal_containing_string(SignalType.MESSAGES_NEW.value, event_string=message_id)
         response = receiver.wakuext_service.accept_contact_request(message_id)
         logger.info("Request sent and accepted")
 
