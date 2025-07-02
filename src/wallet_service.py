@@ -1,14 +1,15 @@
 # Python Imports
-from requests import Response
+from typing import Any
 
 # Project Imports
-from src.rpc_client import RpcClient
-from src.service import Service
+from src.rpc_client import AsyncRpcClient
+from src.service import AsyncService
 
 
-class WalletService(Service):
-    def __init__(self, client: RpcClient):
-        super().__init__(client, "wallet")
+class WalletAsyncService(AsyncService):
+    def __init__(self, async_rpc_client: AsyncRpcClient):
+        super().__init__(async_rpc_client, "wallet")
 
-    def start_wallet(self) -> Response:
-        return self.rpc_request("startWallet")
+    async def start_wallet(self) -> Any:
+        response = await self.rpc_request("startWallet")
+        return await response.json()
