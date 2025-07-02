@@ -17,15 +17,6 @@ LOG_SIGNALS_TO_FILE = False
 SIGNALS_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
-class SignalType(Enum):
-    MESSAGES_NEW = "messages.new"
-    MESSAGE_DELIVERED = "message.delivered"
-    NODE_READY = "node.ready"
-    NODE_STARTED = "node.started"
-    NODE_LOGIN = "node.login"
-    NODE_LOGOUT = "node.stopped"
-
-
 class AsyncSignalClient:
     def __init__(self, ws_url: str, await_signals: list[str]):
         self.url = f"{ws_url}/signals"
@@ -35,7 +26,7 @@ class AsyncSignalClient:
         self.session: Optional[ClientSession] = None
         self.signal_file_path = None
         self.signal_lock = asyncio.Lock()
-
+        # TODO: Improve delta explanation
         self.received_signals: dict[str, dict] = {
             # For each signal type, store:
             # - list of received signals
