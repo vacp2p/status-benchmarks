@@ -1,75 +1,76 @@
-# Python Imports
 import json
 import logging
-import threading
-import requests
 from typing import List, Dict
-from requests import Response
+from aiohttp import ClientSession, ClientTimeout, ClientResponse
 
 # Project Imports
-from src.account_service import AccountService
-from src.rpc_client import RpcClient
-from src.signal_client import SignalClient
-from src.wakuext_service import WakuextService
-from src.wallet_service import WalletService
+from src.account_service import AccountAsyncService
+from src.rpc_client import AsyncRpcClient
+from src.signal_client import AsyncSignalClient
+from src.wakuext_service import WakuextAsyncService
+from src.wallet_service import WalletAsyncService
 
 logger = logging.getLogger(__name__)
 
-class StatusBackend(RpcClient, SignalClient):
 
+class StatusBackend:
     def __init__(self, url: str, await_signals: List[str] = None):
         self.base_url = url
         self.api_url = f"{url}/statusgo"
-        self.ws_url = f"{url}".replace("http", "ws")
+        self.ws_url = url.replace("http", "ws")
         self.rpc_url = f"{url}/statusgo/CallRPC"
         self.public_key = ""
 
-        RpcClient.__init__(self, self.rpc_url)
-        SignalClient.__init__(self, self.ws_url, await_signals)
+        self.rpc = AsyncRpcClient(self.rpc_url)
+        self.signal = AsyncSignalClient(self.ws_url, await_signals)
+        self.session = ClientSession(timeout=ClientTimeout(total=10))
 
-        websocket_thread = threading.Thread(target=self._connect)
-        websocket_thread.daemon = True
-        websocket_thread.start()
+        self.wakuext_service = WakuextAsyncService(self.rpc)
+        self.wallet_service = WalletAsyncService(self.rpc)
+        self.accounts_service = AccountAsyncService(self.rpc)
 
-        self.wakuext_service = WakuextService(self)
-        self.wallet_service = WalletService(self)
-        self.accounts_service = AccountService(self)
+    async def __aenter__(self):
+        await self.rpc.__aenter__()
+        await self.signal.__aenter__()
+        return self
 
-    def api_request(self, method: str, data: Dict, url: str = None) -> Response:
-        url = url if url else self.api_url
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.signal.__aexit__(exc_type, exc_val, exc_tb)
+        await self.rpc.__aexit__(exc_type, exc_val, exc_tb)
+        await self.session.close()
+
+    async def call_rpc(self, method: str, params: List = None):
+        return await self.rpc.rpc_valid_request(method, params or [])
+
+    async def api_request(self, method: str, data: Dict, url: str = None) -> ClientResponse:
+        url = url or self.api_url
         url = f"{url}/{method}"
+        logger.debug(f"Sending async POST request to {url} with data: {json.dumps(data, sort_keys=True)}")
+        async with self.session.post(url, json=data) as response:
+            logger.debug(f"Got response: {await response.text()}")
+            return response
 
-        logger.debug(f"Sending POST request to url {url} with data: {json.dumps(data, sort_keys=True)}")
-        response = requests.post(url, json=data)
+    async def verify_is_valid_api_response(self, response: ClientResponse):
+        if response.status != 200:
+            raise AssertionError(f"Bad HTTP status: {response.status}")
+        try:
+            json_data = await response.json()
+            if "error" in json_data:
+                raise AssertionError(f"API error: {json_data['error']}")
+        except Exception as e:
+            raise AssertionError(f"Invalid JSON response: {e}")
 
-        logger.debug(f"Got response: {response.content}")
+    async def api_valid_request(self, method: str, data: Dict, url: str = None) -> ClientResponse:
+        response = await self.api_request(method, data, url)
+        await self.verify_is_valid_api_response(response)
         return response
 
-    def verify_is_valid_api_response(self, response: Response):
-        assert response.status_code == 200, f"Got response {response.content}, status code {response.status_code}"
-        assert response.content
-        logger.debug(f"Got response: {response.content}")
+    async def start_status_backend(self) -> ClientResponse:
         try:
-            error = response.json()["error"]
-            assert not error, f"Error: {error}"
-        except json.JSONDecodeError:
-            raise AssertionError(f"Invalid JSON in response: {response.content}")
-        except KeyError:
-            pass
-
-    def api_valid_request(self, method: str, data: Dict, url: str = None) -> Response:
-        response = self.api_request(method, data, url)
-        self.verify_is_valid_api_response(response)
-        return response
-
-    def start_status_backend(self) -> Response:
-        logger.debug("Automatically logging out before InitializeApplication")
-        try:
-            self.logout()
-            logger.debug("successfully logged out")
+            await self.logout()
+            logger.debug("Successfully logged out")
         except AssertionError:
-            logger.debug("failed to log out")
-            pass
+            logger.debug("Failed to log out")
 
         method = "InitializeApplication"
         data = {
@@ -80,31 +81,28 @@ class StatusBackend(RpcClient, SignalClient):
             "wakuFleetsConfigFilePath": "/static/configs/config.json"
             # TODO check wakuFleetsConfigFilePath?
         }
-
-        return self.api_valid_request(method, data)
+        return await self.api_valid_request(method, data)
 
     def _set_networks(self, data: Dict):
         anvil_network = {
-                "ChainID": 31337,
-                "ChainName": "Anvil",
-                "Enabled": True,
-                "IsTest": False,
-                "Layer": 1,
-                "NativeCurrencyDecimals": 18,
-                "NativeCurrencyName": "Ether",
-                "NativeCurrencySymbol": "ETH",
-                "RpcProviders": [
-                    {
-                        "authType": "no-auth",
-                        "chainId": 31337,
-                        "enableRpsLimiter": False,
-                        "enabled": True,
-                        "name": "Anvil Direct",
-                        "type": "embedded-direct",
-                        "url": "http://127.0.0.1:8545"
-                    }
-                ],
-                "ShortName": "eth"
+            "ChainID": 31337,
+            "ChainName": "Anvil",
+            "Enabled": True,
+            "IsTest": False,
+            "Layer": 1,
+            "NativeCurrencyDecimals": 18,
+            "NativeCurrencyName": "Ether",
+            "NativeCurrencySymbol": "ETH",
+            "RpcProviders": [{
+                "authType": "no-auth",
+                "chainId": 31337,
+                "enableRpsLimiter": False,
+                "enabled": True,
+                "name": "Anvil Direct",
+                "type": "embedded-direct",
+                "url": "http://127.0.0.1:8545"
+            }],
+            "ShortName": "eth"
         }
         data["testNetworksEnabled"] = False
         data["networkId"] = 31337
@@ -128,27 +126,22 @@ class StatusBackend(RpcClient, SignalClient):
         self._set_networks(data)
         return data
 
-    def create_account_and_login(self, **kwargs) -> Response:
-        method = "CreateAccountAndLogin"
-        data = self._create_account_request(**kwargs)
-        return self.api_valid_request(method, data)
+    async def create_account_and_login(self, **kwargs) -> ClientResponse:
+        return await self.api_valid_request("CreateAccountAndLogin", self._create_account_request(**kwargs))
 
-    def login(self, key_uid: str) -> Response:
-        method = "LoginAccount"
-        data = {
+    async def login(self, key_uid: str) -> ClientResponse:
+        return await self.api_valid_request("LoginAccount", {
             "password": "Strong12345",
             "keyUid": key_uid,
             "kdfIterations": 256000,
-        }
-        return self.api_valid_request(method, data)
+        })
 
-    def logout(self) -> Response:
-        method = "Logout"
-        return self.api_valid_request(method, {})
+    async def logout(self) -> ClientResponse:
+        return await self.api_valid_request("Logout", {})
 
     def set_public_key(self):
         # Only make sense to call this method if the lodes are logged in, otherwise public_key will be set to None.
-        self.public_key = self.node_login_event.get("event", {}).get("settings", {}).get("public-key")
+        self.public_key = self.signal.node_login_event.get("event", {}).get("settings", {}).get("public-key")
 
     def find_key_uid(self) -> str:
-        return self.node_login_event.get("event", {}).get("account", {}).get("key-uid")
+        return self.signal.node_login_event.get("event", {}).get("account", {}).get("key-uid")
