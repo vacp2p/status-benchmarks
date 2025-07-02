@@ -1,79 +1,82 @@
 # Python Imports
+import asyncio
 import json
 import logging
-import requests
-from typing import List
-from requests import Session, Response
-from tenacity import retry, stop_after_delay, wait_fixed
-from json import JSONDecodeError
+from typing import List, Optional, Any
+from aiohttp import ClientSession, ClientTimeout, ClientError
+from tenacity import retry, stop_after_delay, wait_fixed, retry_if_exception_type
 
 # Project Imports
 
+logger = logging.getLogger(__name__)
 
-class RpcClient:
 
-    def __init__(self, rpc_url: str, client: Session = requests.Session()):
-        self.client = client
+class AsyncRpcClient:
+    def __init__(self, rpc_url: str, session: Optional[ClientSession] = None):
         self.rpc_url = rpc_url
+        self._owns_session = session is None
+        self.session = session or ClientSession(timeout=ClientTimeout(total=10))
         self.request_counter = 0
 
-    def _check_decode_and_key_errors_in_response(self, response: Response, key: str) -> str:
-        try:
-            return response.json()[key]
-        except json.JSONDecodeError:
-            raise AssertionError(f"Invalid JSON in response: {response.content}")
-        except KeyError:
-            raise AssertionError(f"Key '{key}' not found in the JSON response: {response.content}")
+    async def __aenter__(self):
+        return self
 
-    def verify_is_valid_json_rpc_response(self, response: Response, _id: str = None) -> Response:
-        assert response.status_code == 200, f"Got response {response.content}, status code {response.status_code}"
-        assert response.content
-        self._check_decode_and_key_errors_in_response(response, "result")
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any):
+        await self.close()
 
-        if _id:
-            try:
-                if _id != response.json()["id"]:
-                    raise AssertionError(f"got id: {response.json()['id']} instead of expected id: {_id}")
-            except KeyError:
-                raise AssertionError(f"no id in response {response.json()}")
-        return response
+    async def close(self):
+        if self._owns_session:
+            await self.session.close()
 
-    def verify_is_json_rpc_error(self, response: Response):
-        assert response.status_code == 200
-        assert response.content
-        self._check_decode_and_key_errors_in_response(response, "error")
+    def _check_key_in_json(self, data: dict, key: str) -> str:
+        if key not in data:
+            raise AssertionError(f"Key '{key}' missing in response: {data}")
+        return data[key]
 
-    @retry(stop=stop_after_delay(10), wait=wait_fixed(0.5), reraise=True)
-    def rpc_request(self, method: str, params: List = None, request_id: str = None, url: str = None,
-                    enable_logging: bool = True) -> Response:
-        if not request_id:
+    def verify_is_valid_json_rpc_response(self, data: dict, request_id: Optional[str] = None):
+        self._check_key_in_json(data, "result")
+        if request_id is not None and str(data.get("id")) != str(request_id):
+            raise AssertionError(f"Expected ID {request_id}, got {data.get('id')}")
+
+    def verify_is_json_rpc_error(self, data: dict):
+        self._check_key_in_json(data, "error")
+
+    @retry(stop=stop_after_delay(10), wait=wait_fixed(0.5), reraise=True, retry=retry_if_exception_type((
+            ClientError, json.JSONDecodeError, AssertionError, asyncio.TimeoutError
+        )))
+    async def rpc_request(self, method: str, params: Optional[List] = None, request_id: Optional[str] = None,
+        url: Optional[str] = None, enable_logging: bool = True) -> dict:
+        if request_id is None:
             request_id = self.request_counter
             self.request_counter += 1
-        if params is None:
-            params = []
-        url = url if url else self.rpc_url
-        data = {"jsonrpc": "2.0", "method": method, "id": request_id}
-        if params:
-            data["params"] = params
+
+        url = url or self.rpc_url
+        payload = {"jsonrpc": "2.0", "method": method, "id": request_id, "params": params or []}
+
         if enable_logging:
-            logging.debug(f"Sending POST request to url {url} with data: {json.dumps(data, sort_keys=True)}")
-        response = self.client.post(url, json=data)
-        try:
-            resp_json = response.json()
+            logger.debug(f"Sending async POST to {url} with data: {json.dumps(payload, sort_keys=True)}")
+
+        async with self.session.post(url, json=payload) as response:
+            resp_text = await response.text()
+
+            if response.status != 200:
+                raise AssertionError(f"Bad HTTP status: {response.status}, body: {resp_text}")
+
+            try:
+                resp_json = await response.json()
+            except json.JSONDecodeError:
+                raise AssertionError(f"Invalid JSON in response: {resp_text}")
+
             if enable_logging:
-                logging.debug(f"Got response: {json.dumps(resp_json, sort_keys=True)}")
-            if resp_json.get("error"):
-                assert "JSON-RPC client is unavailable" != resp_json["error"]
-        except JSONDecodeError:
-            if enable_logging:
-                logging.debug(f"Got response: {response.content}")
-        return response
+                logger.debug(f"Received response: {json.dumps(resp_json, sort_keys=True)}")
 
-    def rpc_valid_request(self, method: str, params: List = None, _id: str = None, url: str = None,
-                          skip_validation: bool = False, enable_logging: bool = True) -> Response:
-        response = self.rpc_request(method, params, _id, url, enable_logging=enable_logging)
+            if "error" in resp_json:
+                raise AssertionError(f"JSON-RPC Error: {resp_json['error']}")
 
-        if not skip_validation:
-            self.verify_is_valid_json_rpc_response(response, _id)
+            return resp_json
 
-        return response
+    async def rpc_valid_request(self, method: str, params: Optional[List] = None, request_id: Optional[str] = None,
+        url: Optional[str] = None, enable_logging: bool = True) -> dict:
+        resp_json = await self.rpc_request(method, params, request_id, url, enable_logging=enable_logging)
+        self.verify_is_valid_json_rpc_response(resp_json, request_id)
+        return resp_json
