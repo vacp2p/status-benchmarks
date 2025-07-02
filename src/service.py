@@ -1,17 +1,15 @@
 # Python Imports
-from typing import List
-from requests import Response
+from typing import Optional, Any
 
 # Project Imports
-from src.rpc_client import RpcClient
+from src.rpc_client import AsyncRpcClient
 
 
-class Service:
-    def __init__(self, client: RpcClient, name: str):
-        assert name != ""
-        self.rpc_client = client
+class AsyncService:
+    def __init__(self, async_rpc_client: AsyncRpcClient, name: str):
+        self.rpc = async_rpc_client
         self.name = name
 
-    def rpc_request(self, method: str, params: List = None, skip_validation: bool = False, enable_logging: bool = True) -> Response:
+    async def rpc_request(self, method: str, params: Optional[list] = None, enable_logging: bool = True) -> Any:
         full_method_name = f"{self.name}_{method}"
-        return self.rpc_client.rpc_valid_request(full_method_name, params, skip_validation=skip_validation, enable_logging=enable_logging)
+        return await self.rpc.rpc_valid_request(full_method_name, params or [], enable_logging=enable_logging)
