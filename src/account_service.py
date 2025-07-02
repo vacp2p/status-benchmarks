@@ -1,19 +1,18 @@
 # Python Imports
-from typing import Dict
 
 # Project Imports
-from src.rpc_client import RpcClient
-from src.service import Service
+from src.rpc_client import AsyncRpcClient
+from src.service import AsyncService
 
 
-class AccountService(Service):
-    def __init__(self, client: RpcClient):
-        super().__init__(client, "accounts")
+class AccountAsyncService(AsyncService):
+    def __init__(self, rpc: AsyncRpcClient):
+        super().__init__(rpc, "accounts")
 
-    def get_accounts(self) -> Dict:
-        response = self.rpc_request("getAccounts")
-        return response.json()
+    async def get_accounts(self) -> dict:
+        response_dict = await self.rpc.rpc_valid_request("getAccounts")
+        return response_dict
 
-    def get_account_keypairs(self) -> Dict:
-        response = self.rpc_request("getKeypairs")
-        return response.json()
+    async def get_account_keypairs(self) -> dict:
+        response_dict = await self.rpc.rpc_valid_request("getKeypairs")
+        return response_dict
