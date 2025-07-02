@@ -3,11 +3,11 @@ import asyncio
 import json
 import logging
 import os
-from enum import Enum
 from typing import Optional, Callable
 from aiohttp import ClientSession, ClientWebSocketResponse, WSMsgType
 from pathlib import Path
 from datetime import datetime
+from src.enums import SignalType
 
 # Project Imports
 
