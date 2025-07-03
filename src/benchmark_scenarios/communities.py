@@ -136,7 +136,7 @@ async def message_sending():
 
     name = f"test_community_{''.join(random.choices(string.ascii_letters, k=10))}"
     logger.info(f"Creating community {name}")
-    response = relay_nodes["status-backend-relay-0"].wakuext_service.create_community(name)
+    response = await relay_nodes["status-backend-relay-0"].wakuext_service.create_community(name)
     community_id = response.get("result", {}).get("communities", [{}])[0].get("id")
     logger.info(f"Community {name} created with ID {community_id}")
 
