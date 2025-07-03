@@ -1,10 +1,12 @@
-import json
+# Python Imports
 import logging
+import json
 from typing import List, Dict
-from aiohttp import ClientSession, ClientTimeout, ClientResponse
+from aiohttp import ClientSession, ClientTimeout
 
 # Project Imports
 from src.account_service import AccountAsyncService
+from src.enums import SignalType
 from src.rpc_client import AsyncRpcClient
 from src.signal_client import AsyncSignalClient
 from src.wakuext_service import WakuextAsyncService
@@ -35,37 +37,45 @@ class StatusBackend:
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self.signal.__aexit__(exc_type, exc_val, exc_tb)
-        await self.rpc.__aexit__(exc_type, exc_val, exc_tb)
+        # Let the caller handle shutdown
+        pass
+
+    async def shutdown(self):
+        await self.signal.__aexit__(None, None, None)
+        await self.rpc.__aexit__(None, None, None)
         await self.session.close()
 
     async def call_rpc(self, method: str, params: List = None):
         return await self.rpc.rpc_valid_request(method, params or [])
 
-    async def api_request(self, method: str, data: Dict, url: str = None) -> ClientResponse:
-        url = url or self.api_url
-        url = f"{url}/{method}"
-        logger.debug(f"Sending async POST request to {url} with data: {json.dumps(data, sort_keys=True)}")
+    async def api_request(self, method: str, data: Dict) -> dict:
+        url = f"{self.api_url}/{method}"
+        logger.debug(f"Sending POST to {url} with data: {data}")
         async with self.session.post(url, json=data) as response:
-            logger.debug(f"Got response: {await response.text()}")
-            return response
+            logger.debug(f"Received response from {method}: {response.status}")
 
-    async def verify_is_valid_api_response(self, response: ClientResponse):
-        if response.status != 200:
-            raise AssertionError(f"Bad HTTP status: {response.status}")
-        try:
-            json_data = await response.json()
-            if "error" in json_data:
+            if response.status != 200:
+                body = await response.text()
+                raise AssertionError(f"Bad HTTP status: {response.status}, body: {body}")
+
+            try:
+                json_data = await response.json()
+            except json.JSONDecodeError:
+                body = await response.text()
+                raise AssertionError(f"Invalid JSON in response: {body}")
+
+            if json_data.get("error"):
                 raise AssertionError(f"API error: {json_data['error']}")
-        except Exception as e:
-            raise AssertionError(f"Invalid JSON response: {e}")
 
-    async def api_valid_request(self, method: str, data: Dict, url: str = None) -> ClientResponse:
-        response = await self.api_request(method, data, url)
-        await self.verify_is_valid_api_response(response)
-        return response
+            return json_data
 
-    async def start_status_backend(self) -> ClientResponse:
+    async def api_valid_request(self, method: str, data: Dict) -> dict:
+        json_data = await self.api_request(method, data)
+        logger.debug(f"Valid response from {method}: {json_data}")
+        return json_data
+
+    async def start_status_backend(self) -> dict:
+        await self.__aenter__()
         try:
             await self.logout()
             logger.debug("Successfully logged out")
@@ -126,22 +136,33 @@ class StatusBackend:
         self._set_networks(data)
         return data
 
-    async def create_account_and_login(self, **kwargs) -> ClientResponse:
-        return await self.api_valid_request("CreateAccountAndLogin", self._create_account_request(**kwargs))
+    async def create_account_and_login(self, **kwargs) -> dict | None:
+        response = await self.api_valid_request("CreateAccountAndLogin", self._create_account_request(**kwargs))
 
-    async def login(self, key_uid: str) -> ClientResponse:
-        return await self.api_valid_request("LoginAccount", {
+        signal = await self.signal.wait_for_login()
+
+        self.set_public_key(signal)
+        self.signal.node_login_event = signal
+        return response
+
+    async def login(self, key_uid: str) -> dict:
+        response = await self.api_valid_request("LoginAccount", {
             "password": "Strong12345",
             "keyUid": key_uid,
             "kdfIterations": 256000,
         })
+        signal = await self.signal.wait_for_login()
+        self.set_public_key(signal)
+        return response
 
-    async def logout(self) -> ClientResponse:
+    async def logout(self) -> dict:
         return await self.api_valid_request("Logout", {})
 
-    def set_public_key(self):
-        # Only make sense to call this method if the lodes are logged in, otherwise public_key will be set to None.
-        self.public_key = self.signal.node_login_event.get("event", {}).get("settings", {}).get("public-key")
+    def set_public_key(self, signal_data: dict):
+        self.public_key = signal_data.get("event", {}).get("settings", {}).get("public-key")
 
     def find_key_uid(self) -> str:
-        return self.signal.node_login_event.get("event", {}).get("account", {}).get("key-uid")
+        recent = self.signal.get_recent_signals(SignalType.NODE_LOGIN.value)
+        if not recent:
+            raise RuntimeError("No login signal received to extract key UID")
+        return recent[-1].get("event", {}).get("account", {}).get("key-uid")
