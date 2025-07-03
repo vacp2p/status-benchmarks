@@ -145,4 +145,9 @@ async def message_sending():
     join_ids = await request_join_nodes_to_community(relay_nodes, nodes, community_id)
     chat_id = await accept_community_requests(owner, join_ids)
 
-    await asyncio.gather(*[inject_messages(relay_nodes[node], 5, chat_id, 100) for node in nodes[:100]])
+    await asyncio.gather(*[inject_messages(relay_nodes[node], 5, community_id+chat_id, 100) for node in nodes[:100]])
+
+    logger.info("Shutting down node connections")
+    await asyncio.gather(*[node.shutdown() for node in relay_nodes.values()])
+    logger.info("Finished store_performance")
+
