@@ -2,7 +2,7 @@
 import logging
 import json
 from typing import List, Dict
-from aiohttp import ClientSession, ClientTimeout, ClientResponse
+from aiohttp import ClientSession, ClientTimeout
 
 # Project Imports
 from src.account_service import AccountAsyncService

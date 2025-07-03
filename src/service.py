@@ -1,5 +1,5 @@
 # Python Imports
-from typing import Optional, Any
+from typing import Optional
 
 # Project Imports
 from src.rpc_client import AsyncRpcClient
