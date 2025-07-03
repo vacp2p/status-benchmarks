@@ -10,9 +10,9 @@ class AccountAsyncService(AsyncService):
         super().__init__(rpc, "accounts")
 
     async def get_accounts(self) -> dict:
-        response_dict = await self.rpc.rpc_valid_request("getAccounts")
-        return response_dict
+        json_response = await self.rpc.rpc_valid_request("getAccounts")
+        return json_response
 
     async def get_account_keypairs(self) -> dict:
-        response_dict = await self.rpc.rpc_valid_request("getKeypairs")
-        return response_dict
+        json_response = await self.rpc.rpc_valid_request("getKeypairs")
+        return json_response
