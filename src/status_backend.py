@@ -41,6 +41,7 @@ class StatusBackend:
         pass
 
     async def shutdown(self):
+        await self.logout()
         await self.signal.__aexit__(None, None, None)
         await self.rpc.__aexit__(None, None, None)
         await self.session.close()
@@ -156,7 +157,10 @@ class StatusBackend:
         return response
 
     async def logout(self) -> dict:
-        return await self.api_valid_request("Logout", {})
+        json_response = await self.api_valid_request("Logout", {})
+        _ = await self.signal.wait_for_logout()
+        logger.debug("Successfully logged out")
+        return json_response
 
     def set_public_key(self, signal_data: dict):
         self.public_key = signal_data.get("event", {}).get("settings", {}).get("public-key")
