@@ -99,7 +99,7 @@ class AsyncSignalClient:
             raise ValueError(f"Signal type {signal_type} is not in the list of awaited signals")
         try:
             signal = await asyncio.wait_for(self.signal_queues[signal_type].get(), timeout)
-            logger.info(f"Received {signal_type} signal: {signal}")
+            logger.debug(f"Received {signal_type} signal: {signal}")
             return signal
         except asyncio.TimeoutError:
             raise TimeoutError(f"Signal {signal_type} not received in {timeout} seconds")
@@ -116,9 +116,9 @@ class AsyncSignalClient:
         return self.signal_queues[signal_type].recent()
 
     async def wait_for_login(self) -> dict:
-        logger.info("Waiting for login signal...")
+        logger.debug("Waiting for login signal...")
         signal = await self.wait_for_signal(SignalType.NODE_LOGIN.value)
-        logger.info(f"Login signal received: {signal}")
+        logger.debug(f"Login signal received: {signal}")
         if "error" in signal.get("event", {}):
             error_details = signal["event"]["error"]
             assert not error_details, f"Unexpected error during login: {error_details}"
