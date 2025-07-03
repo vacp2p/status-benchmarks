@@ -39,6 +39,11 @@ class WakuextAsyncService(AsyncService):
         json_response = await self.rpc_request("acceptRequestToJoinCommunity", params)
         return json_response
 
+    async def decline_request_to_join_community(self, request_to_join_id: str) -> dict:
+        params = [{"id": request_to_join_id}]
+        json_response = await self.rpc_request("declineRequestToJoinCommunity", params)
+        return json_response
+
     async def send_chat_message(self, chat_id: str, message: str, content_type: int = 1) -> dict:
         # TODO content type can always be 1? (plain TEXT), does it need to be community type for communities?
         params = [{"chatId": chat_id, "text": message, "contentType": content_type}]
