@@ -1,8 +1,8 @@
 # Python Imports
+import asyncio
 import logging
 import time
 from concurrent.futures import as_completed, ThreadPoolExecutor
-from typing import List, Dict
 
 # Project Imports
 from src.status_backend import StatusBackend
@@ -10,56 +10,54 @@ from src.status_backend import StatusBackend
 logger = logging.getLogger(__name__)
 
 
-def initialize_nodes_application(pod_names: list[str], wakuV2LightClient=False):
-    nodes_status = {}
+async def initialize_nodes_application(pod_names: list[str], wakuV2LightClient=False) -> dict[str, StatusBackend]:
+    # We don't need a lock here because we cannot have two pods with the same name, and no other operations are done.
+    nodes_status: dict[str, StatusBackend] = {}
 
-    # Initialize thread pool for concurrent execution
-    with ThreadPoolExecutor(max_workers=len(pod_names)) as executor:  # Concurrency for multiple pods
-        futures = []
+    async def _init_status(pod_name: str):
+        try:
+            status_backend = StatusBackend(
+                url=f"http://{pod_name}:3333",
+                await_signals=["messages.new", "message.delivered", "node.ready", "node.started", "node.login",
+                               "node.stopped"]
+            )
+            await status_backend.start_status_backend()
+            await status_backend.create_account_and_login(wakuV2LightClient=wakuV2LightClient)
+            await status_backend.wallet_service.start_wallet()
+            await status_backend.wakuext_service.start_messenger()
+            nodes_status[pod_name.split(".")[0]] = status_backend
+        except AssertionError as e:
+            logger.error(f"Error initializing StatusBackend for pod {pod_name}: {e}")
+            raise
 
-        # Step 1: Initialize StatusBackend and SignalClient for each pod
-        for pod_name in pod_names:
-            futures.append(
-                executor.submit(_init_status, nodes_status, pod_name, wakuV2LightClient))  # One signal per backend
-
-        # Wait for all initialization tasks to complete
-        for future in as_completed(futures):  # Use concurrent.futures.as_completed here
-            try:
-                future.result()
-            except Exception as e:
-                logger.error(f"Initialization error for a node: {e}")
-                return
+    await asyncio.gather(*[_init_status(pod) for pod in pod_names])
 
     logger.info(f"All {len(pod_names)} nodes have been initialized successfully")
-
     return nodes_status
 
 
+async def request_join_nodes_to_community(backend_nodes: dict, nodes_to_join: list[str], community_id: str):
 
-def request_join_nodes_to_community(backend_nodes: Dict, nodes_to_join, community_id):
-    join_ids = []
+    async def _request_to_join_to_community(node: StatusBackend, community_id: str) -> str:
+        try:
+            _ = await node.wakuext_service.fetch_community(community_id)
+            response_to_join = await node.wakuext_service.request_to_join_community(community_id)
+            join_id = response_to_join.get("result", {}).get("requestsToJoinCommunity", [{}])[0].get("id")
 
-    with ThreadPoolExecutor(max_workers=len(nodes_to_join)) as executor:
-        futures = []
+            return join_id
 
-        for node in nodes_to_join:
-            selected_node = backend_nodes[node]
-            futures.append(
-                executor.submit(_join_community_on_node, selected_node, community_id))
+        except AssertionError as e:
+            logger.error(f"Error requesting to join on StatusBackend {node.base_url}: {e}")
+            raise
 
-        for future in as_completed(futures):
-            try:
-                join_id = future.result()
-                join_ids.append(join_id)
-            except Exception as e:
-                logger.error(f"Initialization error for a node: {e}")
-                return
+    join_ids = await asyncio.gather(*[_request_to_join_to_community(backend_nodes[node], community_id) for node in nodes_to_join])
+
+    logger.info(f"All {len(nodes_to_join)} nodes have been joined successfully to {community_id}")
 
     return join_ids
 
 
-
-def login_nodes(backend_nodes: Dict, include: List[str]):
+def login_nodes(backend_nodes: dict, include: list[str]):
     with ThreadPoolExecutor(max_workers=len(include)) as executor:
         futures = []
         for node in include:
@@ -87,50 +85,24 @@ def login_node(node: StatusBackend):
         raise
 
 
-def logout_nodes(backend_nodes: Dict, include: List[str]):
-    with ThreadPoolExecutor(max_workers=len(include)) as executor:  # Concurrency for multiple pods
-        futures = []
-
-        for node in include:
-            futures.append(executor.submit(_logout_node, backend_nodes[node]))
-
-        for future in as_completed(futures):
-            try:
-                future.result()
-            except Exception as e:
-                logger.error(f"Initialization error for a node: {e}")
-                return
-
-    logger.info(f"All nodes have been logged out successfully")
-
-
-def _logout_node(node: StatusBackend):
-    try:
-        node.logout()
-        node.wait_for_logout()
-    except Exception as e:
-        logger.error(f"Error logging out node {node}: {e}")
-        raise
+# def logout_nodes(backend_nodes: dict, include: list[str]):
+#     with ThreadPoolExecutor(max_workers=len(include)) as executor:  # Concurrency for multiple pods
+#         futures = []
+#
+#         for node in include:
+#             futures.append(executor.submit(_logout_node, backend_nodes[node]))
+#
+#         for future in as_completed(futures):
+#             try:
+#                 future.result()
+#             except Exception as e:
+#                 logger.error(f"Initialization error for a node: {e}")
+#                 return
+#
+#     logger.info(f"All nodes have been logged out successfully")
 
 
-def _init_status(nodes_status, pod_name, wakuV2LightClient):
-    """
-    Helper function to initialize a StatusBackend instance and its dedicated SignalClient.
-    """
-    try:
-        status_backend = StatusBackend(url=f"http://{pod_name}:3333",
-                                       await_signals=["messages.new", "message.delivered", "node.ready", "node.started",
-                                                      "node.login", "node.stopped"])
-        status_backend.start_status_backend()
-        nodes_status[pod_name.split(".")[0]] = status_backend
-        status_backend.create_account_and_login(wakuV2LightClient=wakuV2LightClient)
-        status_backend.wait_for_login()
-        status_backend.set_public_key()
-        status_backend.wakuext_service.start_messenger()
-        status_backend.wallet_service.start_wallet()
-    except Exception as e:
-        logger.error(f"Error initializing StatusBackend for pod {pod_name}: {e}")
-        raise
+
 
 
 def _join_community_on_node(node, community_id) -> str:
@@ -160,6 +132,7 @@ def accept_community_requests(node_owner, join_ids):
 
     return chat_ids[0]
 
+
 def reject_community_requests(node_owner, join_ids):
     with ThreadPoolExecutor(max_workers=len(join_ids)) as executor:
         futures = []
@@ -175,6 +148,7 @@ def reject_community_requests(node_owner, join_ids):
             except Exception as e:
                 logger.error(f"Rejection error for a node: {e}")
                 return
+
 
 def _accept_community_request(node, join_id):
     max_retries = 40
@@ -193,6 +167,7 @@ def _accept_community_request(node, join_id):
     chats = response.get("result", {}).get("communities", [{}])[0].get("chats", {})
     chat_id = list(chats.keys())[0] if chats else None
     return chat_id
+
 
 def _reject_community_request(node, join_id):
     max_retries = 40
@@ -228,10 +203,12 @@ def send_friend_requests(nodes, senders, receivers):
 
     logger.info("Send request sent and accepted")
 
-def _send_friend_request(sender: StatusBackend, receivers: List[StatusBackend]):
+
+def _send_friend_request(sender: StatusBackend, receivers: list[StatusBackend]):
     for receiver in receivers:
         response = sender.wakuext_service.send_contact_request(receiver.public_key, "contact request")
-        expected_message = get_message_by_content_type(response, content_type=MessageContentType.CONTACT_REQUEST.value)[0]
+        expected_message = get_message_by_content_type(response, content_type=MessageContentType.CONTACT_REQUEST.value)[
+            0]
         message_id = expected_message.get("id")
         receiver.find_signal_containing_string(SignalType.MESSAGES_NEW.value, event_string=message_id)
         response = receiver.wakuext_service.accept_contact_request(message_id)
