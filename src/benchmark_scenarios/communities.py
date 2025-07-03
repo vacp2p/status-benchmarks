@@ -9,7 +9,8 @@ import src.logger
 from src import kube_utils
 from src import setup_status
 from src.inject_messages import inject_messages
-from src.setup_status import request_join_nodes_to_community, login_nodes, accept_community_requests
+from src.setup_status import request_join_nodes_to_community, login_nodes, accept_community_requests, \
+    reject_community_requests
 
 logger = logging.getLogger(__name__)
 

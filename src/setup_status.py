@@ -2,7 +2,6 @@
 import asyncio
 import logging
 import time
-from concurrent.futures import as_completed, ThreadPoolExecutor
 
 # Project Imports
 from src.status_backend import StatusBackend
@@ -51,7 +50,7 @@ async def request_join_nodes_to_community(backend_nodes: dict[str, StatusBackend
 
     join_ids = await asyncio.gather(*[_request_to_join_to_community(backend_nodes[node], community_id) for node in nodes_to_join])
 
-    logger.info(f"All {len(nodes_to_join)} nodes have been joined successfully to {community_id}")
+    logger.info(f"All {len(nodes_to_join)} nodes have requested joined a community successfully to {community_id}")
 
     return join_ids
 
@@ -69,6 +68,7 @@ async def login_nodes(backend_nodes: dict[str, StatusBackend], include: list[str
     await asyncio.gather(*[_login_node(backend_nodes[node]) for node in include])
 
 
+# TODO add an accept rate
 async def accept_community_requests(node_owner: StatusBackend, join_ids: list[str]):
     async def _accept_community_request(node: StatusBackend, join_id: str) -> str:
         max_retries = 40
