@@ -11,11 +11,11 @@ async def inject_messages(pod: StatusBackend, msg_per_sec: int, chat_id: str, nu
     delay = 1 / msg_per_sec
     for message_count in range(num_messages):
         try:
-            logger.info(f"Sending message {message_count}")
+            logger.debug(f"Sending message {message_count}")
             await pod.wakuext_service.send_chat_message(chat_id, f"Message {message_count}")
 
             if message_count == 0:
-                logger.info("Successfully began sending messages")
+                logger.info(f"Successfully began sending {num_messages} messages")
             elif message_count % 10 == 0:
                 logger.debug(f"Sent {message_count} messages")
 

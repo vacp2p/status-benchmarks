@@ -79,7 +79,6 @@ class StatusBackend:
         await self.__aenter__()
         try:
             await self.logout()
-            logger.debug("Successfully logged out")
         except AssertionError:
             logger.debug("Failed to log out")
 
