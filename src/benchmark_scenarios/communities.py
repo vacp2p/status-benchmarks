@@ -124,3 +124,25 @@ async def store_performance():
     await asyncio.gather(*[node.shutdown() for node in relay_nodes.values()])
     await asyncio.gather(*[node.shutdown() for node in light_nodes.values()])
     logger.info("Finished store_performance")
+
+async def message_sending():
+    # 1 community owner
+    # 500 users
+    # all joined
+    # -> 100 nodes send 1 message every 5s
+    kube_utils.setup_kubernetes_client()
+    backend_relay_pods = kube_utils.get_pods("status-backend-relay", "status-go-test")
+    relay_nodes = await setup_status.initialize_nodes_application(backend_relay_pods)
+
+    name = f"test_community_{''.join(random.choices(string.ascii_letters, k=10))}"
+    logger.info(f"Creating community {name}")
+    response = relay_nodes["status-backend-relay-0"].wakuext_service.create_community(name)
+    community_id = response.get("result", {}).get("communities", [{}])[0].get("id")
+    logger.info(f"Community {name} created with ID {community_id}")
+
+    owner = relay_nodes["status-backend-relay-0"]
+    nodes = [key for key in relay_nodes.keys() if key != "status-backend-relay-0"]
+    join_ids = await request_join_nodes_to_community(relay_nodes, nodes, community_id)
+    chat_id = await accept_community_requests(owner, join_ids)
+
+    await asyncio.gather(*[inject_messages(relay_nodes[node], 5, chat_id, 100) for node in nodes[:100]])
