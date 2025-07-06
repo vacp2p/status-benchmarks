@@ -2,7 +2,6 @@
 import asyncio
 import logging
 import time
-from concurrent.futures import as_completed, ThreadPoolExecutor
 
 # Project Imports
 from src.status_backend import StatusBackend
@@ -51,7 +50,7 @@ async def request_join_nodes_to_community(backend_nodes: dict[str, StatusBackend
 
     join_ids = await asyncio.gather(*[_request_to_join_to_community(backend_nodes[node], community_id) for node in nodes_to_join])
 
-    logger.info(f"All {len(nodes_to_join)} nodes have been joined successfully to {community_id}")
+    logger.info(f"All {len(nodes_to_join)} nodes have requested joined a community successfully to {community_id}")
 
     return join_ids
 
@@ -69,6 +68,7 @@ async def login_nodes(backend_nodes: dict[str, StatusBackend], include: list[str
     await asyncio.gather(*[_login_node(backend_nodes[node]) for node in include])
 
 
+# TODO add an accept rate
 async def accept_community_requests(node_owner: StatusBackend, join_ids: list[str]):
     async def _accept_community_request(node: StatusBackend, join_id: str) -> str:
         max_retries = 40
@@ -99,3 +99,32 @@ async def accept_community_requests(node_owner: StatusBackend, join_ids: list[st
 
     # Same chat ID for everyone
     return chat_ids[0]
+
+async def reject_community_requests(owner: StatusBackend, join_ids: list[str]):
+    async def _reject_community_request(node: StatusBackend, join_id: str):
+        max_retries = 40
+        retry_interval = 0.5
+
+        for attempt in range(max_retries):
+            try:
+                response = await node.wakuext_service.request_to_join_community(join_id)
+                # We need to find the correspondant community of the join_id. We retrieve first chat because should be
+                # the only one. We do this because there can be several communities if we reuse the node.
+                # TODO why it returns the information of all communities?
+                if response.get("result"):
+                    for request in response.get("result").get("requestsToJoinCommunity"):
+                        if request.get("id") == join_id:
+                            for community in response.get("result").get("communities"):
+                                if community.get("id") == request.get("communityId"):
+                                    return list(community.get("chats").keys())[0]
+            except Exception as e:
+                logging.error(f"Attempt {attempt + 1}/{max_retries}: Unexpected error: {e}")
+                time.sleep(retry_interval)
+
+        raise Exception(
+            f"Failed to accept request to join community in {max_retries * retry_interval} seconds."
+        )
+
+    _ = await asyncio.gather(*[_reject_community_request(owner, join_id) for join_id in join_ids])
+
+    logger.info(f"All {len(join_ids)} nodes have been rejected successfully")
