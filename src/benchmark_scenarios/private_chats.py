@@ -6,6 +6,7 @@ import random
 # Project Imports
 import src.logger
 from src import kube_utils, setup_status
+from src.inject_messages import inject_messages_one_to_one
 from src.setup_status import initialize_nodes_application, send_friend_requests, accept_friend_requests, \
     decline_friend_requests
 
@@ -103,3 +104,28 @@ async def contact_request():
     await asyncio.gather(*[node.shutdown() for node in relay_nodes.values()],
                          *[node.shutdown() for node in light_nodes.values()])
     logger.info("Finished contact_request")
+
+
+async def send_one_to_one_message():
+    # 50 sending nodes
+    # 50 receiving nodes
+    # 50 idle nodes
+    # Each sending node has sent a contact request to a receiving node, that accepted it
+    # -> Sending nodes send one text message per 10 sec
+    kube_utils.setup_kubernetes_client()
+    backend_relay_pods = kube_utils.get_pods("status-backend-relay", "status-go-test")
+    relay_nodes = await initialize_nodes_application(backend_relay_pods)
+
+    backend_relay_pods = [pod_name.split(".")[0] for pod_name in backend_relay_pods]
+
+    senders = backend_relay_pods[:50]
+    receiving = backend_relay_pods[50:100]
+
+    friend_requests = await send_friend_requests(relay_nodes, senders, receiving)
+    _ = await accept_friend_requests(relay_nodes, friend_requests)
+
+    await asyncio.gather(*[inject_messages_one_to_one(relay_nodes[senders[i]], 10, relay_nodes[receiving[i]].public_key, 60) for i in range(50)])
+
+    logger.info("Shutting down node connections")
+    await asyncio.gather(*[node.shutdown() for node in relay_nodes.values()])
+    logger.info("Finished send_one_to_one_message")
