@@ -107,22 +107,14 @@ async def reject_community_requests(owner: StatusBackend, join_ids: list[str]):
 
         for attempt in range(max_retries):
             try:
-                response = await node.wakuext_service.request_to_join_community(join_id)
-                # We need to find the correspondant community of the join_id. We retrieve first chat because should be
-                # the only one. We do this because there can be several communities if we reuse the node.
-                # TODO why it returns the information of all communities?
-                if response.get("result"):
-                    for request in response.get("result").get("requestsToJoinCommunity"):
-                        if request.get("id") == join_id:
-                            for community in response.get("result").get("communities"):
-                                if community.get("id") == request.get("communityId"):
-                                    return list(community.get("chats").keys())[0]
-            except Exception as e:
+                response = await node.wakuext_service.decline_request_to_join_community(join_id)
+                return response # TODO do we want this
+            except AssertionError as e:
                 logging.error(f"Attempt {attempt + 1}/{max_retries}: Unexpected error: {e}")
                 time.sleep(retry_interval)
 
         raise Exception(
-            f"Failed to accept request to join community in {max_retries * retry_interval} seconds."
+            f"Failed to reject community request in {max_retries * retry_interval} seconds."
         )
 
     _ = await asyncio.gather(*[_reject_community_request(owner, join_id) for join_id in join_ids])
