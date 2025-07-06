@@ -79,13 +79,13 @@ async def accept_community_requests(node_owner: StatusBackend, join_ids: list[st
                 response = await node.wakuext_service.accept_request_to_join_community(join_id)
                 # We need to find the correspondant community of the join_id. We retrieve first chat because should be
                 # the only one. We do this because there can be several communities if we reuse the node.
-                # TODO why it returns the information of all communities?
-                if response.get("result"):
-                    for request in response.get("result").get("requestsToJoinCommunity"):
-                        if request.get("id") == join_id:
-                            for community in response.get("result").get("communities"):
-                                if community.get("id") == request.get("communityId"):
-                                    return list(community.get("chats").keys())[0]
+                # TODO why it returns the information of all communities? Getting the chat this way seems weird
+                msgs = await get_messages_by_message_type(response, "requestsToJoinCommunity", join_id)
+                for community in response.get("result").get("communities"):
+                    # We always have one msg
+                    if community.get("id") == msgs[0].get("communityId"):
+                        # We always have one chat
+                        return list(community.get("chats").keys())[0]
             except Exception as e:
                 logging.error(f"Attempt {attempt + 1}/{max_retries}: Unexpected error: {e}")
                 time.sleep(retry_interval)
@@ -107,24 +107,42 @@ async def reject_community_requests(owner: StatusBackend, join_ids: list[str]):
 
         for attempt in range(max_retries):
             try:
-                response = await node.wakuext_service.request_to_join_community(join_id)
-                # We need to find the correspondant community of the join_id. We retrieve first chat because should be
-                # the only one. We do this because there can be several communities if we reuse the node.
-                # TODO why it returns the information of all communities?
-                if response.get("result"):
-                    for request in response.get("result").get("requestsToJoinCommunity"):
-                        if request.get("id") == join_id:
-                            for community in response.get("result").get("communities"):
-                                if community.get("id") == request.get("communityId"):
-                                    return list(community.get("chats").keys())[0]
-            except Exception as e:
+                response = await node.wakuext_service.decline_request_to_join_community(join_id)
+                return response # TODO do we want this
+            except AssertionError as e:
                 logging.error(f"Attempt {attempt + 1}/{max_retries}: Unexpected error: {e}")
                 time.sleep(retry_interval)
 
         raise Exception(
-            f"Failed to accept request to join community in {max_retries * retry_interval} seconds."
+            f"Failed to reject community request in {max_retries * retry_interval} seconds."
         )
 
     _ = await asyncio.gather(*[_reject_community_request(owner, join_id) for join_id in join_ids])
 
     logger.info(f"All {len(join_ids)} nodes have been rejected successfully")
+
+
+async def get_messages_by_content_type(response: dict, content_type: str,  message_pattern: str="") -> list[dict]:
+    matched_messages = []
+    messages = response.get("result", {}).get("messages", [])
+    for message in messages:
+        if message.get("contentType") != content_type:
+            continue
+        if not message_pattern or message_pattern in str(message):
+            matched_messages.append(message)
+    if matched_messages:
+        return matched_messages
+    else:
+        raise ValueError(f"Failed to find a message with contentType '{content_type}' in response")
+
+
+async def get_messages_by_message_type(response: dict, message_type: str = "messages",  message_pattern: str="") -> list[dict]:
+    matched_messages = []
+    messages = response.get("result", {}).get(message_type, [])
+    for message in messages:
+        if not message_pattern or message_pattern in str(message):
+            matched_messages.append(message)
+    if matched_messages:
+        return matched_messages
+    else:
+        raise ValueError(f"Failed to find a message with message type '{message_type}' in response")
