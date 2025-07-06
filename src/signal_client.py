@@ -128,8 +128,7 @@ class AsyncSignalClient:
     async def wait_for_logout(self) -> dict:
         return await self.wait_for_signal(SignalType.NODE_LOGOUT.value)
 
-    async def find_signal_containing_string(self, signal_type: str, event_string: str, timeout=20) -> Optional[dict]:
-        start_time = asyncio.get_event_loop().time()
+
     async def find_signal_containing_string(self, signal_type: str, event_string: str, timeout: int = 20) \
             -> Optional[dict]:
         if signal_type not in self.signal_queues:
