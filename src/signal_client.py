@@ -130,13 +130,23 @@ class AsyncSignalClient:
 
     async def find_signal_containing_string(self, signal_type: str, event_string: str, timeout=20) -> Optional[dict]:
         start_time = asyncio.get_event_loop().time()
+    async def find_signal_containing_string(self, signal_type: str, event_string: str, timeout: int = 20) \
+            -> Optional[dict]:
+        if signal_type not in self.signal_queues:
+            raise ValueError(f"Signal type {signal_type} is not in the list of awaited signals")
+
+        queue = self.signal_queues[signal_type]
+        end_time = asyncio.get_event_loop().time() + timeout
+
         while True:
-            try:
-                signal = await asyncio.wait_for(self.signal_queues[signal_type].get(), timeout)
+            for signal in queue.recent():
                 if event_string in json.dumps(signal):
-                    logger.info(f"Found {signal_type} containing '{event_string}'")
+                    # Remove the found signal from the buffer
+                    queue.buffer.remove(signal)
+                    logger.info(f"Found {signal_type} containing '{event_string}' in buffer")
                     return signal
-            except asyncio.TimeoutError:
-                raise TimeoutError(
-                    f"Signal {signal_type} containing '{event_string}' not received in {timeout} seconds"
-                )
+
+            if asyncio.get_event_loop().time() > end_time:
+                raise TimeoutError(f"{signal_type} containing '{event_string}' not found in {timeout} seconds")
+
+            await asyncio.sleep(0.2)
