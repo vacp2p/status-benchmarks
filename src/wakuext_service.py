@@ -64,3 +64,23 @@ class WakuextAsyncService(AsyncService):
         params = [{"id": request_id}]
         json_response = await self.rpc_request("declineContactRequest", params)
         return json_response
+
+    async def send_one_to_one_message(self, contact_id: str, message: str):
+        params = [{"id": contact_id, "message": message}]
+        json_response = await self.rpc_request("sendOneToOneMessage", params)
+        return json_response
+
+    async def create_group_chat_with_members(self, pubkey_list: list, group_chat_name: str):
+        params = [None, group_chat_name, pubkey_list]
+        json_response = await self.rpc_request("createGroupChatWithMembers", params)
+        return json_response
+
+    async def send_group_chat_message(self, group_id: str, message: str):
+        params = [{"id": group_id, "message": message}]
+        json_response = await self.rpc_request("sendGroupChatMessage", params)
+        return json_response
+
+    async def add_contact(self, contact_id: str, displayName: str):
+        params = [{"id": contact_id, "nickname": "fake_nickname", "displayName": displayName, "ensName": ""}]
+        json_response = await self.rpc_request("addContact", params)
+        return json_response
