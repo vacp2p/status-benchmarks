@@ -5,5 +5,9 @@ It will grab the env variables of BOOT_ENRS and STORE_ENRS (bootstrap and store 
 
 ## Changelog
 
+- v1.1.0
+  - Working with status-backend `b22c58bd3bdd4a387dc09dccba1d866d5ae09adf`
+  - Moved bootstrap_enrs to only "discV5BootstrapNodes" so light clients are not disconnected.
+
 - v1.0.0
   - Working with status-backend `b22c58bd3bdd4a387dc09dccba1d866d5ae09adf`
