@@ -84,6 +84,22 @@ class AsyncSignalClient:
             elif msg.type == WSMsgType.ERROR:
                 logger.error(f"WebSocket error: {self.ws.exception()}")
 
+    def cleanup_signal_queues(self):
+        queue_names = [
+            "messages.new", "message.delivered", "node.ready",
+            "node.started", "node.stopped"
+        ] # All but login, so we can find key uid
+
+        if self.signal_queues:
+            for queue_name in queue_names:
+                queue = self.signal_queues.get(queue_name)
+                if queue and isinstance(queue, BufferedQueue):
+                    queue.buffer.clear()
+                    queue.messages.clear()
+                    logger.debug(f"Cleaned queue: {queue_name}")
+
+        logger.debug("Specified signal queues have been cleaned up.")
+
     async def on_message(self, signal: str):
         signal_data = json.loads(signal)
         logger.debug(f"Received WebSocket message: {signal_data}")
