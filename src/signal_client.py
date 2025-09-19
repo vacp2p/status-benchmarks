@@ -20,11 +20,15 @@ SIGNALS_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 class BufferedQueue:
-    def __init__(self, max_size: int = 100):
+    def __init__(self, max_size: int = 200):
         self.queue = asyncio.Queue()
         self.buffer = deque(maxlen=max_size)
+        self.messages = []
 
     async def put(self, item):
+        if item.get("event") is not None and item.get("event").get("messages"):
+            for message in item["event"]["messages"]:
+                self.messages.append((item["timestamp"], message["text"]))
         self.buffer.append(item)
         await self.queue.put(item)
 
