@@ -1,6 +1,7 @@
 # Python Imports
 import logging
 import json
+import time
 from typing import List, Dict
 from aiohttp import ClientSession, ClientTimeout
 
@@ -153,6 +154,7 @@ class StatusBackend:
         })
         signal = await self.signal.wait_for_login()
         self.set_public_key(signal)
+        self.last_login = int(time.time())
         return response
 
     async def logout(self, clean_signals = False) -> dict:
