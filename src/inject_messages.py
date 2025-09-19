@@ -60,7 +60,7 @@ async def inject_messages_group_chat(pod: StatusBackend, delay_between_message: 
             await asyncio.sleep(delay_between_message)
 
         except AssertionError as e:
-            logger.error(f"Error sending message: {e}")
+            logger.error(f"Error sending message from pod {pod.base_url}: {e}")
             await asyncio.sleep(1)
 
     logger.info(f"Finished sending {num_messages} messages")
