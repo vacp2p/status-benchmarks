@@ -240,7 +240,8 @@ async def isolated_traffic_chat_messages_2():
     chat_id = await accept_community_requests(owner, join_ids)
 
     await asyncio.sleep(10)
-    await asyncio.gather(*[node.logout() for node in relay_nodes.values()])
+    await asyncio.gather(*[relay_nodes[node].logout() for node in nodes_250])
+    await asyncio.sleep(10)
 
     logger.info("Shutting down node connections")
     await asyncio.gather(*[node.shutdown() for node in relay_nodes.values()])
