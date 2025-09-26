@@ -172,6 +172,36 @@ async def accept_friend_requests(nodes: dict[str, StatusBackend], requests: list
 
 
 
+async def decline_friend_requests(nodes: dict[str, StatusBackend], requests: list[(str, dict[str, str])]):
+    # Flatten all tasks into a single list and execute them concurrently
+    async def _decline_friend_request(nodes: dict[str, StatusBackend], sender: str, receiver: str, request_id: str):
+        max_retries = 40
+        retry_interval = 0.5
+
+        for attempt in range(max_retries):
+            try:
+                _ = await nodes[receiver].wakuext_service.decline_contact_request(request_id)
+                return _
+            except Exception as e:
+                logging.error(f"Attempt {attempt + 1}/{max_retries}: Unexpected error: {e}")
+                time.sleep(retry_interval)
+
+        raise Exception(
+            f"Failed to reject friend request in {max_retries * retry_interval} seconds."
+        )
+
+    _ = await asyncio.gather(
+        *[
+            _decline_friend_request(nodes, sender, receiver, request_id)
+            for sender, receivers in requests
+            for receiver, request_id in receivers.items()
+        ]
+    )
+
+    total_requests = sum(len(receivers) for _, receivers in requests)
+    logger.info(f"All {total_requests} friend requests rejected.")
+
+
 async def get_messages_by_content_type(response: dict, content_type: str,  message_pattern: str="") -> list[dict]:
     matched_messages = []
     messages = response.get("result", {}).get("messages", [])
