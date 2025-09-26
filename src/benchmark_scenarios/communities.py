@@ -222,8 +222,7 @@ async def isolated_traffic_chat_messages_2():
     # 1 community owner
     # 500 user nodes
     # 250 in community
-    # 1 -> community members send 1 message every 10s, measure volume
-    # 2 -> stop members doesn't impact non-members traffic.
+    # Stopping members shouldn't impact non-members traffic.
     # Measure non-joined nodes have minimal traffic not correlated to community traffic in 1 and 2
     kube_utils.setup_kubernetes_client()
     backend_relay_pods = kube_utils.get_pods("status-backend-relay", "status-go-test")
