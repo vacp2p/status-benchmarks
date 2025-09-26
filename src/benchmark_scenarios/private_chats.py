@@ -32,7 +32,7 @@ async def idle_relay():
 async def idle_light():
     # 1 light node alice
     # 100 light nodes - friends
-    # friends have accepted contact request with alice, who accepted it
+    # friends have accepted contact request with alice
 
     kube_utils.setup_kubernetes_client()
     backend_light_pods = kube_utils.get_pods("status-backend-light", "status-go-test")
