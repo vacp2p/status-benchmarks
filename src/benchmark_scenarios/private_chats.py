@@ -142,17 +142,18 @@ async def create_private_group():
 
     backend_relay_pods = [pod_name.split(".")[0] for pod_name in backend_relay_pods]
 
-    admin_nodes = backend_relay_pods[:1]
-    members = backend_relay_pods[1:110]
+    admin_nodes = backend_relay_pods[:10]
+    members = backend_relay_pods[10:110]
     members_pub_keys = [relay_nodes[node].public_key for node in members]
 
+    # In order to create a group, first they need to be friends
     friend_requests = await send_friend_requests(relay_nodes, admin_nodes, members)
-
     logger.info("Accepting friend requests")
     _ = await accept_friend_requests(relay_nodes, friend_requests)
     _ = await add_contacts(relay_nodes, admin_nodes, members)
 
-    await create_group_chat(relay_nodes[admin_nodes[0]], members_pub_keys)
+    # 1 admin to 10 users, no overlap
+    await asyncio.gather(*[create_group_chat(relay_nodes[admin], members_pub_keys[10*i: (10*i)+10]) for i, admin in enumerate(admin_nodes)])
 
     logger.info("Shutting down node connections")
     await asyncio.gather(*[node.shutdown() for node in relay_nodes.values()])
