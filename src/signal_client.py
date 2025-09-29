@@ -20,11 +20,15 @@ SIGNALS_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 class BufferedQueue:
-    def __init__(self, max_size: int = 100):
+    def __init__(self, max_size: int = 200):
         self.queue = asyncio.Queue()
         self.buffer = deque(maxlen=max_size)
+        self.messages = []
 
     async def put(self, item):
+        if item.get("event") is not None and item.get("event").get("messages"):
+            for message in item["event"]["messages"]:
+                self.messages.append((item["timestamp"], message["text"]))
         self.buffer.append(item)
         await self.queue.put(item)
 
@@ -79,6 +83,22 @@ class AsyncSignalClient:
                 await self.on_message(msg.data)
             elif msg.type == WSMsgType.ERROR:
                 logger.error(f"WebSocket error: {self.ws.exception()}")
+
+    def cleanup_signal_queues(self):
+        queue_names = [
+            "messages.new", "message.delivered", "node.ready",
+            "node.started", "node.stopped"
+        ] # All but login, so we can find key uid
+
+        if self.signal_queues:
+            for queue_name in queue_names:
+                queue = self.signal_queues.get(queue_name)
+                if queue and isinstance(queue, BufferedQueue):
+                    queue.buffer.clear()
+                    queue.messages.clear()
+                    logger.debug(f"Cleaned queue: {queue_name}")
+
+        logger.debug("Specified signal queues have been cleaned up.")
 
     async def on_message(self, signal: str):
         signal_data = json.loads(signal)

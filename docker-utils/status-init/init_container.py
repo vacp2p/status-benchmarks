@@ -31,8 +31,8 @@ def update_config():
 
         config = {
             "dst.dev": {
-                "wakuNodes": bootstrap_enrs,
-                "discV5BootstrapNodes": [],
+                "wakuNodes": bootstrap_enrs, # --staticnode
+                "discV5BootstrapNodes": bootstrap_enrs, # --discv5-bootstrap-node
                 "clusterId": int(os.getenv("CLUSTER_ID", 16)),
                 "storeNodes": []
             }

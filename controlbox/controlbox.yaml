@@ -52,11 +52,12 @@ spec:
           - status-service-bootstrap.status-go-test.svc.cluster.local
           - status-backend-light.status-go-test.svc.cluster.local
           - status-backend-relay.status-go-test.svc.cluster.local
+          - status-backend-relay-2.status-go-test.svc.cluster.local
       serviceAccountName: controlbox-sa
       containers:
       - name: controlbox
         image: soutullostatus/controlbox-status:v1.0.0
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
         ports:
         - containerPort: 22
         command: ["/bin/bash", "-c"]

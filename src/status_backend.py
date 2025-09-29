@@ -1,6 +1,7 @@
 # Python Imports
 import logging
 import json
+import time
 from typing import List, Dict
 from aiohttp import ClientSession, ClientTimeout
 
@@ -153,12 +154,16 @@ class StatusBackend:
         })
         signal = await self.signal.wait_for_login()
         self.set_public_key(signal)
+        self.last_login = int(time.time())
         return response
 
-    async def logout(self) -> dict:
+    async def logout(self, clean_signals = False) -> dict:
         json_response = await self.api_valid_request("Logout", {})
         _ = await self.signal.wait_for_logout()
         logger.debug("Successfully logged out")
+        if clean_signals:
+            self.signal.cleanup_signal_queues()
+
         return json_response
 
     def set_public_key(self, signal_data: dict):
