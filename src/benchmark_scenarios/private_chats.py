@@ -171,20 +171,27 @@ async def send_group_message():
 
     backend_relay_pods = [pod_name.split(".")[0] for pod_name in backend_relay_pods]
 
-    admin_nodes = backend_relay_pods[:1]
-    members = backend_relay_pods[1:110]
+    admin_nodes = backend_relay_pods[:10]
+    members = backend_relay_pods[10:110]
     members_pub_keys = [relay_nodes[node].public_key for node in members]
 
+    # In order to create a group, first they need to be friends
     friend_requests = await send_friend_requests(relay_nodes, admin_nodes, members)
-
     logger.info("Accepting friend requests")
     _ = await accept_friend_requests(relay_nodes, friend_requests)
     _ = await add_contacts(relay_nodes, admin_nodes, members)
 
-    await create_group_chat(relay_nodes[admin_nodes[0]], members_pub_keys)
+    # 1 admin to 10 users, no overlap
+    group_ids = await asyncio.gather(*[create_group_chat(relay_nodes[admin], members_pub_keys[10*i: (10*i)+10]) for i, admin in enumerate(admin_nodes)])
+    await asyncio.sleep(10)
 
-    # TODO Every member send message in their group
-    await inject_messages_group_chat()
+    await asyncio.gather(*[
+        inject_messages_group_chat(relay_nodes[member],
+                                   delay_between_message=10,
+                                   group_id=group_ids[i//10], # 10 first nodes to group 0, 10 to group 1, ...
+                                   num_messages=10) for i, member in members
+    ])
+
 
     logger.info("Shutting down node connections")
     await asyncio.gather(*[node.shutdown() for node in relay_nodes.values()])
