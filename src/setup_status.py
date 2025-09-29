@@ -1,6 +1,8 @@
 # Python Imports
 import asyncio
 import logging
+import random
+import string
 import time
 
 # Project Imports
@@ -171,6 +173,16 @@ async def accept_friend_requests(nodes: dict[str, StatusBackend], requests: list
     logger.info(f"All {total_requests} friend requests accepted.")
 
 
+async def add_contacts(nodes: dict[str, StatusBackend], adders: list[str], contacts: list[str]):
+    async def _add_contacts_to_node(nodes: dict[str, StatusBackend], adder: str, contacts: list[str]):
+        _ = await asyncio.gather(*[nodes[adder].wakuext_service.add_contact(nodes[contact].public_key, contact) for contact in contacts])
+
+        return _
+
+    _ = await asyncio.gather(*[_add_contacts_to_node(nodes, adder, contacts) for adder in adders])
+
+    logger.info(f"All {len(contacts)} contacts added to {len(adders)} nodes.")
+
 
 async def decline_friend_requests(nodes: dict[str, StatusBackend], requests: list[(str, dict[str, str])]):
     # Flatten all tasks into a single list and execute them concurrently
@@ -200,6 +212,15 @@ async def decline_friend_requests(nodes: dict[str, StatusBackend], requests: lis
 
     total_requests = sum(len(receivers) for _, receivers in requests)
     logger.info(f"All {total_requests} friend requests rejected.")
+
+
+async def create_group_chat(admin: StatusBackend, receivers: list[str]):
+    name = f"private_group_{''.join(random.choices(string.ascii_letters, k=10))}"
+    logger.info(f"Creating private group {name}")
+    response = await admin.wakuext_service.create_group_chat_with_members(receivers, name)
+    group_id = response.get("result", {}).get("communities", [{}])[0].get("id")
+    logger.info(f"Group {name} created with ID {group_id}")
+
 
 
 async def get_messages_by_content_type(response: dict, content_type: str,  message_pattern: str="") -> list[dict]:
