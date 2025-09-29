@@ -45,3 +45,22 @@ async def inject_messages_one_to_one(pod: StatusBackend, delay_between_message: 
             await asyncio.sleep(1)
 
     logger.info(f"Finished sending {num_messages} messages")
+
+async def inject_messages_group_chat(pod: StatusBackend, delay_between_message: float, group_id: str, num_messages: int):
+    for message_count in range(num_messages):
+        try:
+            logger.debug(f"Sending message {message_count}")
+            await pod.wakuext_service.send_group_chat_message(group_id, f"Message {message_count}")
+
+            if message_count == 0:
+                logger.info(f"Successfully began sending {num_messages} messages")
+            elif message_count % 10 == 0:
+                logger.debug(f"Sent {message_count} messages")
+
+            await asyncio.sleep(delay_between_message)
+
+        except AssertionError as e:
+            logger.error(f"Error sending message: {e}")
+            await asyncio.sleep(1)
+
+    logger.info(f"Finished sending {num_messages} messages")
