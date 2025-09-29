@@ -221,6 +221,7 @@ async def create_group_chat(admin: StatusBackend, receivers: list[str]):
     group_id = response.get("result", {}).get("communities", [{}])[0].get("id")
     logger.info(f"Group {name} created with ID {group_id}")
 
+    return group_id
 
 
 async def get_messages_by_content_type(response: dict, content_type: str,  message_pattern: str="") -> list[dict]:
