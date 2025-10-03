@@ -23,8 +23,16 @@ async def idle_relay():
 
     alice = "status-backend-relay-0"
     friends = [key for key in relay_nodes.keys() if key != alice]
-    requests_made = await send_friend_requests(relay_nodes, [alice], friends)
-    _ = await accept_friend_requests(relay_nodes, requests_made)
+
+    requests_made = await send_friend_requests(relay_nodes, [alice], friends, 1)
+    logger.info("Accepting friend requests")
+    delays = await accept_friend_requests(relay_nodes, requests_made)
+    # TODO: These delays include the accumulation of intermediate_delays, they are not accurate.
+    # Intermediate delay is needed to not saturate status node, otherwise request don't arrive.
+    # TODO: We should merge send and receive operations in asynq queues as well
+    logger.info(f"Delays are: {delays}")
+    logger.info("Waiting 30 seconds")
+    await asyncio.sleep(30)
 
     logger.info("Shutting down node connections")
     await asyncio.gather(*[node.shutdown() for node in relay_nodes.values()])
