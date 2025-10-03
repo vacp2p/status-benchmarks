@@ -167,32 +167,36 @@ async def accept_friend_requests(nodes: dict[str, StatusBackend],
     async def _accept_friend_request(nodes: dict[str, StatusBackend], sender: str, receiver: str,
                                      timestamp_request_id: Tuple[int, str]):
         max_retries = 40
-        retry_interval = 0.5
+        retry_interval = 2
 
         for attempt in range(max_retries):
             try:
-                _ = await nodes[receiver].wakuext_service.accept_contact_request(request_id)
+                _ = await nodes[receiver].wakuext_service.accept_contact_request(timestamp_request_id[1])
                 accepted_signal = f"@{nodes[receiver].public_key} accepted your contact request"
-                signal = await nodes[sender].signal.find_signal_containing_string(SignalType.MESSAGES_NEW.value, event_string=accepted_signal)
-                return signal
+                message = await nodes[sender].signal.find_signal_containing_string(SignalType.MESSAGES_NEW.value,
+                                                                                   event_string=accepted_signal,
+                                                                                   timeout=10)
+                return message[0] - int(timestamp_request_id[0]) // 1000  # Convert unix milliseconds to seconds
             except Exception as e:
-                logging.error(f"Attempt {attempt + 1}/{max_retries}: Unexpected error: {e}")
-                time.sleep(retry_interval)
+                logging.error(f"Attempt {attempt + 1}/{max_retries} from {sender} to {receiver}: "
+                              f"Unexpected error accepting friend request: {e}")
+                time.sleep(2)
 
         raise Exception(
             f"Failed to accept friend request in {max_retries * retry_interval} seconds."
         )
 
-    _ = await asyncio.gather(
+    delays = await asyncio.gather(
         *[
-            _accept_friend_request(nodes, sender, receiver, request_id)
+            _accept_friend_request(nodes, sender, receiver, timestamp_requestid)
             for sender, receivers in requests
-            for receiver, request_id in receivers.items()
+            for receiver, timestamp_requestid in receivers.items()
         ]
     )
 
-    total_requests = sum(len(receivers) for _, receivers in requests)
+    total_requests = sum(len(receivers) for delays, receivers in requests)
     logger.info(f"All {total_requests} friend requests accepted.")
+    return delays
 
 
 async def add_contacts(nodes: dict[str, StatusBackend], adders: list[str], contacts: list[str]):
