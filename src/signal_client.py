@@ -159,7 +159,6 @@ class AsyncSignalClient:
 
         # TODO MAKE THIS TO BE TRIGGERED AUTOMATICALLY WHEN MESSAGE APPEARS
         while True:
-            # for signal in queue.recent():
             for message in queue.messages:
                 if event_string in message[1]:
                     # Remove the found signal from the buffer
