@@ -1,6 +1,7 @@
 # Python Imports
-import logging
 import asyncio
+import logging
+import traceback
 from typing import Iterable, List, Tuple, Dict, Optional
 
 # Project Imports
@@ -76,6 +77,7 @@ async def collect_results(done_q: asyncio.Queue[asyncio.Task | None], function: 
             logger.info(f"Collected result from {function}")
             results.append(result)
         except Exception as e:
-            logger.error(f"Error collecting result from {function}: {e!r}")
+            logger.error(f"Error collecting result from {function}: {e!r}\n"
+                         f"{traceback.format_exc()}")
 
     return results
