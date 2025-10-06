@@ -64,6 +64,7 @@ async def launch_workers(nodes: Dict[str, StatusBackend],
 
 
 async def collect_results(done_q: asyncio.Queue[asyncio.Task | None], function: str = None) -> List:
+    """Collect results from `done_q` until `done_q` yields `None`."""
     results: List = []
     while True:
         fut = await done_q.get()
