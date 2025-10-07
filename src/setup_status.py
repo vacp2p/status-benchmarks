@@ -128,7 +128,7 @@ async def reject_community_requests(owner: StatusBackend, join_ids: list[str]):
     logger.info(f"All {len(join_ids)} nodes have been rejected successfully")
 
 
-async def send_friend_requests(nodes: dict[str, "StatusBackend"], senders: list[str], receivers: list[str],
+async def send_friend_requests(nodes: dict[str, StatusBackend], senders: list[str], receivers: list[str],
     intermediate_delay: float, max_in_flight: int = 0) -> list[RequestResult]:
 
     async def _send_friend_request(nodes: dict[str, StatusBackend], sender: str, receiver: str):
