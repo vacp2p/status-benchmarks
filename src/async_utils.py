@@ -31,7 +31,7 @@ async def launch_workers(worker_tasks: List[partial], done_queue: asyncio.Queue[
                 sem.release()
             try:
                 result = t.result()
-                done_queue.put_nowait(("ok", (j.func.__name__, j.args[1:], result)))
+                done_queue.put_nowait(("ok", (j, result)))
             except Exception as e:
                 tb = "".join(traceback.format_exception(type(e), e, e.__traceback__))
                 done_queue.put_nowait(("err", (e, tb)))
@@ -47,8 +47,8 @@ async def collect_results(done_q: asyncio.Queue[tuple[str, object]], total_tasks
     for _ in range(total_tasks):
         status, payload = await done_q.get()
         if status == "ok":
-            func_name, args, results = payload
-            logger.info(f"Task completed: {func_name} {args}")
+            partial_object, results = payload
+            logger.info(f"Task completed: {partial_object.func.__name__} {partial_object.args[1:]}")
             collected.append(results)
         else:
             e, tb = payload  # from the launcher callback
