@@ -148,8 +148,8 @@ class AsyncSignalClient:
     async def wait_for_logout(self) -> dict:
         return await self.wait_for_signal(SignalType.NODE_LOGOUT.value)
 
-
-    async def find_signal_containing_string(self, signal_type: str, event_string: str, timeout: int = 20) \
+    # TODO should be applied to other places
+    async def find_signal_containing_string(self, signal_type: str, event_string: str, timeout: int = 10) \
             -> Optional[dict]:
         if signal_type not in self.signal_queues:
             raise ValueError(f"Signal type {signal_type} is not in the list of awaited signals")
@@ -157,13 +157,14 @@ class AsyncSignalClient:
         queue = self.signal_queues[signal_type]
         end_time = asyncio.get_event_loop().time() + timeout
 
+        # TODO MAKE THIS TO BE TRIGGERED AUTOMATICALLY WHEN MESSAGE APPEARS
         while True:
-            for signal in queue.recent():
-                if event_string in json.dumps(signal):
+            for message in queue.messages:
+                if event_string in message[1]:
                     # Remove the found signal from the buffer
-                    queue.buffer.remove(signal)
-                    logger.info(f"Found {signal_type} containing '{event_string}' in buffer")
-                    return signal
+                    # queue.buffer.remove(signal)
+                    logger.info(f"Found {signal_type} containing '{event_string}' in messages")
+                    return message
 
             if asyncio.get_event_loop().time() > end_time:
                 raise TimeoutError(f"{signal_type} containing '{event_string}' not found in {timeout} seconds")
