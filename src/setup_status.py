@@ -148,14 +148,12 @@ async def send_friend_requests(nodes: Dict[str, StatusBackend],
 
     jobs = make_jobs(senders, receivers)
 
-    producer_task = asyncio.create_task(enqueue_jobs(job_q, jobs))
+    await enqueue_jobs(job_q, jobs)
     launcher_task = asyncio.create_task(
         launch_workers(nodes, job_q, done_q, intermediate_delay, max_in_flight=max_in_flight, func=_send_friend_request)
     )
     collector_task = asyncio.create_task(collect_results(done_q, send_friend_requests.__name__))
-    await asyncio.gather(producer_task, launcher_task)
-
-    results = await collector_task
+    _, results = await asyncio.gather(launcher_task, collector_task)
     logger.info(f"All {len(results)} friend requests processed (out of {len(jobs)}).")
 
     return results
