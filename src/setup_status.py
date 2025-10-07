@@ -4,10 +4,11 @@ import logging
 import random
 import string
 import time
-from typing import Tuple, List, Dict, Optional
+from functools import partial
+from typing import Tuple, List
 
 # Project Imports
-from src.async_utils import make_jobs, enqueue_jobs, launch_workers, collect_results
+from src.async_utils import launch_workers, collect_results, RequestResult
 from src.enums import MessageContentType, SignalType
 from src.status_backend import StatusBackend
 
@@ -127,12 +128,8 @@ async def reject_community_requests(owner: StatusBackend, join_ids: list[str]):
     logger.info(f"All {len(join_ids)} nodes have been rejected successfully")
 
 
-async def send_friend_requests(nodes: Dict[str, StatusBackend],
-                               senders: List[str],
-                               receivers: List[str],
-                               intermediate_delay: float,
-                               max_in_flight: int = 0,
-                               ) -> List[Tuple[str, Dict[str, Tuple[int, str]]]]:
+async def send_friend_requests(nodes: dict[str, "StatusBackend"], senders: list[str], receivers: list[str],
+    intermediate_delay: float, max_in_flight: int = 0) -> list[RequestResult]:
 
     async def _send_friend_request(nodes: dict[str, StatusBackend], sender: str, receiver: str):
         response = await nodes[sender].wakuext_service.send_contact_request(nodes[receiver].public_key, "Friend Request")
@@ -143,20 +140,25 @@ async def send_friend_requests(nodes: Dict[str, StatusBackend],
 
         return sender, request_id
 
-    job_q: asyncio.Queue[Optional[Tuple[str, str]]] = asyncio.Queue()
-    done_q: asyncio.Queue[asyncio.Task] = asyncio.Queue()
+    done_queue: asyncio.Queue[tuple[str, object]] = asyncio.Queue()
 
-    jobs = make_jobs(senders, receivers)
+    workers_to_launch = [
+        partial(_send_friend_request, nodes, sender, receiver)
+        for sender in senders
+        for receiver in receivers
+    ]
 
-    await enqueue_jobs(job_q, jobs)
     launcher_task = asyncio.create_task(
-        launch_workers(nodes, job_q, done_q, intermediate_delay, max_in_flight=max_in_flight, func=_send_friend_request)
+        launch_workers(workers_to_launch, done_queue, intermediate_delay, max_in_flight)
     )
-    collector_task = asyncio.create_task(collect_results(done_q, send_friend_requests.__name__))
-    _, results = await asyncio.gather(launcher_task, collector_task)
-    logger.info(f"All {len(results)} friend requests processed (out of {len(jobs)}).")
+    collector_task = asyncio.create_task(
+        collect_results(done_queue, total_tasks=len(workers_to_launch))
+    )
 
-    return results
+    _, collected = await asyncio.gather(launcher_task, collector_task)
+
+    logger.info(f"All {len(collected)} friend requests processed (out of {len(jobs)}).")
+    return collected
 
 
 async def accept_friend_requests(nodes: dict[str, StatusBackend],
