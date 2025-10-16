@@ -6,6 +6,7 @@ import random
 # Project Imports
 import src.logger
 from src import kube_utils, setup_status
+from src.async_utils import CollectedItem
 from src.inject_messages import inject_messages_one_to_one, inject_messages_group_chat
 from src.setup_status import initialize_nodes_application, send_friend_requests, accept_friend_requests, \
     decline_friend_requests, create_group_chat, add_contacts
@@ -24,15 +25,14 @@ async def idle_relay():
     alice = "status-backend-relay-0"
     friends = [key for key in relay_nodes.keys() if key != alice]
 
-    requests_made = await send_friend_requests(relay_nodes, [alice], friends, 1)
-    logger.info("Accepting friend requests")
-    delays = await accept_friend_requests(relay_nodes, requests_made)
-    # TODO: These delays include the accumulation of intermediate_delays, they are not accurate.
-    # Intermediate delay is needed to not saturate status node, otherwise request don't arrive.
-    # TODO: We should merge send and receive operations in asynq queues as well
+    results_queue: asyncio.Queue[CollectedItem] = asyncio.Queue()
+
+    send_task = asyncio.create_task(send_friend_requests(relay_nodes, results_queue, [alice], friends, 1))
+    accept_task = asyncio.create_task(accept_friend_requests(relay_nodes, results_queue, 4))
+
+    _, delays = await asyncio.gather(send_task, accept_task)
+
     logger.info(f"Delays are: {delays}")
-    logger.info("Waiting 30 seconds")
-    await asyncio.sleep(30)
 
     logger.info("Shutting down node connections")
     await asyncio.gather(*[node.shutdown() for node in relay_nodes.values()])
