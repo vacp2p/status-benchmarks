@@ -5,19 +5,23 @@ import random
 import string
 import time
 from functools import partial
-from typing import Tuple, List
+from typing import List
 
 # Project Imports
-from src.async_utils import launch_workers, collect_results, RequestResult
+from src.async_utils import launch_workers, collect_results_from_tasks, TaskResult, CollectedItem, signal_when_done, \
+    function_on_queue_item
+from src.dataclasses import ResultEntry
 from src.enums import MessageContentType, SignalType
 from src.status_backend import StatusBackend
 
 logger = logging.getLogger(__name__)
 
+NodesInformation = dict[str, StatusBackend]
 
-async def initialize_nodes_application(pod_names: list[str], wakuV2LightClient=False) -> dict[str, StatusBackend]:
+
+async def initialize_nodes_application(pod_names: list[str], wakuV2LightClient=False) -> NodesInformation:
     # We don't need a lock here because we cannot have two pods with the same name, and no other operations are done.
-    nodes_status: dict[str, StatusBackend] = {}
+    nodes_status: NodesInformation = {}
 
     async def _init_status(pod_name: str):
         try:
@@ -128,19 +132,22 @@ async def reject_community_requests(owner: StatusBackend, join_ids: list[str]):
     logger.info(f"All {len(join_ids)} nodes have been rejected successfully")
 
 
-async def send_friend_requests(nodes: dict[str, StatusBackend], senders: list[str], receivers: list[str],
-    intermediate_delay: float, max_in_flight: int = 0) -> list[RequestResult]:
+async def send_friend_requests(nodes: NodesInformation,
+                               results_queue: asyncio.Queue[CollectedItem],
+                               senders: list[str], receivers: list[str],
+                               intermediate_delay: float, max_in_flight: int = 0):
 
-    async def _send_friend_request(nodes: dict[str, StatusBackend], sender: str, receiver: str):
+    async def _send_friend_request(nodes: NodesInformation, sender: str, receiver: str):
         response = await nodes[sender].wakuext_service.send_contact_request(nodes[receiver].public_key, "Friend Request")
         # Get responses and filter by contact requests to obtain request ids
         request_response = await get_messages_by_content_type(response, MessageContentType.CONTACT_REQUEST.value)
-        # Create a dict {receiver: (response_timestamp, request)}, using the first response (there is always only one friend request)
-        request_id = {receiver: (int(request_response[0].get("timestamp")), request_response[0].get("id"))}
+        # Create a ResultEntry using the first response (there is always only one friend request)
+        request_id = ResultEntry(sender=sender, receiver=receiver, timestamp=int(request_response[0].get("timestamp")),
+                                 result=request_response[0].get("id"))
 
-        return sender, request_id
+        return request_id
 
-    done_queue: asyncio.Queue[tuple[str, object]] = asyncio.Queue()
+    done_queue: asyncio.Queue[TaskResult | None] = asyncio.Queue()
 
     workers_to_launch = [
         partial(_send_friend_request, nodes, sender, receiver)
@@ -148,17 +155,12 @@ async def send_friend_requests(nodes: dict[str, StatusBackend], senders: list[st
         for receiver in receivers
     ]
 
-    launcher_task = asyncio.create_task(
-        launch_workers(workers_to_launch, done_queue, intermediate_delay, max_in_flight)
-    )
-    collector_task = asyncio.create_task(
-        collect_results(done_queue, total_tasks=len(workers_to_launch))
-    )
+    collector_task = [asyncio.create_task(collect_results_from_tasks(done_queue, results_queue)) for _ in range(4)]
+    launcher_task = asyncio.create_task(launch_workers(workers_to_launch, done_queue, intermediate_delay, max_in_flight))
+    sentinel_task = asyncio.create_task(signal_when_done(launcher_task, done_queue, 4))
 
-    _, collected = await asyncio.gather(launcher_task, collector_task)
+    await asyncio.gather(launcher_task, *collector_task, sentinel_task)
 
-    logger.info(f"All {len(collected)} friend requests processed (out of {len(jobs)}).")
-    return collected
 
 
 async def accept_friend_requests(nodes: dict[str, StatusBackend],
