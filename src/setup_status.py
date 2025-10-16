@@ -162,25 +162,24 @@ async def send_friend_requests(nodes: NodesInformation,
     await asyncio.gather(launcher_task, *collector_task, sentinel_task)
 
 
-
-async def accept_friend_requests(nodes: dict[str, StatusBackend],
-                                 requests: List[Tuple[str, dict[str, Tuple[int, str]]]]) -> List[float]:
-    # Flatten all tasks into a single list and execute them "concurrently"
-    async def _accept_friend_request(nodes: dict[str, StatusBackend], sender: str, receiver: str,
-                                     timestamp_request_id: Tuple[int, str]):
+async def accept_friend_requests(nodes: dict[str, StatusBackend], results_queue: asyncio.Queue[CollectedItem],
+                                 consumers: int) -> List[float]:
+    # TODO: This should be activated when the signal is received instead of getting looped
+    async def _accept_friend_request(queue_result: CollectedItem):
         max_retries = 40
         retry_interval = 2
 
         for attempt in range(max_retries):
+            function_name, result_entry = queue_result
             try:
-                _ = await nodes[receiver].wakuext_service.accept_contact_request(timestamp_request_id[1])
-                accepted_signal = f"@{nodes[receiver].public_key} accepted your contact request"
-                message = await nodes[sender].signal.find_signal_containing_string(SignalType.MESSAGES_NEW.value,
-                                                                                   event_string=accepted_signal,
-                                                                                   timeout=10)
-                return message[0] - int(timestamp_request_id[0]) // 1000  # Convert unix milliseconds to seconds
+                _ = await nodes[result_entry.receiver].wakuext_service.accept_contact_request(result_entry.result)
+                accepted_signal = f"@{nodes[result_entry.receiver].public_key} accepted your contact request"
+                message = await nodes[result_entry.sender].signal.find_signal_containing_string(SignalType.MESSAGES_NEW.value,
+                                                                                                event_string=accepted_signal,
+                                                                                                timeout=10)
+                return message[0] - int(result_entry.timestamp) // 1000  # Convert unix milliseconds to seconds
             except Exception as e:
-                logging.error(f"Attempt {attempt + 1}/{max_retries} from {sender} to {receiver}: "
+                logging.error(f"Attempt {attempt + 1}/{max_retries} from {result_entry.sender} to {result_entry.receiver}: "
                               f"Unexpected error accepting friend request: {e}")
                 time.sleep(2)
 
@@ -188,16 +187,17 @@ async def accept_friend_requests(nodes: dict[str, StatusBackend],
             f"Failed to accept friend request in {max_retries * retry_interval} seconds."
         )
 
-    delays = await asyncio.gather(
-        *[
-            _accept_friend_request(nodes, sender, receiver, timestamp_requestid)
-            for sender, receivers in requests
-            for receiver, timestamp_requestid in receivers.items()
-        ]
+    delays_queue: asyncio.Queue[float] = asyncio.Queue()
+
+    await asyncio.gather(*[asyncio.create_task(
+        function_on_queue_item(results_queue, _accept_friend_request, delays_queue))
+        for _ in range(consumers)]
     )
 
-    total_requests = sum(len(receivers) for delays, receivers in requests)
-    logger.info(f"All {total_requests} friend requests accepted.")
+    delays: list[float] = []
+    while not delays_queue.empty():
+        delays.append(delays_queue.get_nowait())
+
     return delays
 
 
