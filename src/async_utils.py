@@ -2,18 +2,29 @@
 import asyncio
 import logging
 import traceback
+from collections.abc import Callable
 from functools import partial
-from typing import List, Tuple
+from typing import Literal, Any
 
 # Project Imports
+from src.dataclasses import ResultEntry
 
+
+RequestResult = tuple[partial, ResultEntry]
+RequestError  = tuple[Exception, str]
+
+TaskOk  = tuple[Literal["ok"], RequestResult]
+TaskErr = tuple[Literal["err"], RequestError]
+TaskResult = TaskOk | TaskErr
+
+CollectedItem = tuple[str, ResultEntry]
+
+SENTINEL: TaskResult | None = None  # stop signal for collectors
 
 logger = logging.getLogger(__name__)
-# [(node_sender, {node_receiver: (timestamp, message)}), ...]
-RequestResult = Tuple[str, dict[str, Tuple[int, str]]]
 
 
-async def launch_workers(worker_tasks: List[partial], done_queue: asyncio.Queue[tuple[str, object]], intermediate_delay: float,
+async def launch_workers(worker_tasks: list[partial], done_queue: asyncio.Queue[TaskResult], intermediate_delay: float,
                          max_in_flight: int = 0) -> None:
 
     sem = asyncio.Semaphore(max_in_flight) if max_in_flight > 0 else None
@@ -42,16 +53,30 @@ async def launch_workers(worker_tasks: List[partial], done_queue: asyncio.Queue[
             await asyncio.sleep(intermediate_delay)
 
 
-async def collect_results(done_q: asyncio.Queue[tuple[str, object]], total_tasks: int) -> List[RequestResult]:
-    collected: List[RequestResult] = []
-    for _ in range(total_tasks):
-        status, payload = await done_q.get()
+async def collect_results_from_tasks(done_queue: asyncio.Queue[TaskResult | None],
+                                     results_queue: asyncio.Queue[CollectedItem | None]):
+    while True:
+        item = await done_queue.get()
+        if item is SENTINEL:
+            logger.info(f"Consumer finished.")
+            results_queue.put_nowait(SENTINEL)
+            break
+        status, payload = item
         if status == "ok":
             partial_object, results = payload
             logger.info(f"Task completed: {partial_object.func.__name__} {partial_object.args[1:]}")
-            collected.append(results)
+            results_queue.put_nowait((partial_object.func.__name__, results))
         else:
             e, tb = payload  # from the launcher callback
             logger.error(f"Task failed: {e}\n{tb}", e, tb)
 
-    return collected
+
+async def signal_when_done(launcher_task: asyncio.Task,
+                            done_queue: asyncio.Queue[TaskResult | None],
+                            num_collectors: int) -> None:
+    try:
+        await launcher_task
+    finally:
+        # Always signal collectors to stop, even if launcher errored/cancelled
+        for _ in range(num_collectors):
+            await done_queue.put(None)
