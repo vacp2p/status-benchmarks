@@ -80,3 +80,13 @@ async def signal_when_done(launcher_task: asyncio.Task,
         # Always signal collectors to stop, even if launcher errored/cancelled
         for _ in range(num_collectors):
             await done_queue.put(None)
+
+
+async def function_on_queue_item(queue: asyncio.Queue[CollectedItem], async_func: Callable,
+                            results: asyncio.Queue[Any]) -> None:
+    while True:
+        item = await queue.get()
+        if item is SENTINEL:
+            break
+        result = await async_func(item)
+        results.put_nowait(result)
