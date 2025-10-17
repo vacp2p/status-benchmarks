@@ -25,10 +25,11 @@ async def idle_relay(consumers: int = 4):
     alice = "status-backend-relay-0"
     friends = [key for key in relay_nodes.keys() if key != alice]
 
-    results_queue: asyncio.Queue[CollectedItem] = asyncio.Queue()
+    results_queue: asyncio.Queue[CollectedItem | None] = asyncio.Queue()
+    finished_evt = asyncio.Event()
 
-    send_task = asyncio.create_task(send_friend_requests(relay_nodes, results_queue, [alice], friends, 1, consumers))
-    accept_task = asyncio.create_task(accept_friend_requests(relay_nodes, results_queue, consumers))
+    send_task = asyncio.create_task(send_friend_requests(relay_nodes, results_queue, [alice], friends, finished_evt))
+    accept_task = asyncio.create_task(accept_friend_requests(relay_nodes, results_queue, consumers, finished_evt))
 
     _, delays = await asyncio.gather(send_task, accept_task)
 

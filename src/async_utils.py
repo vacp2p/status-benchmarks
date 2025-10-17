@@ -19,8 +19,6 @@ TaskResult = TaskOk | TaskErr
 
 CollectedItem = tuple[str, ResultEntry]
 
-SENTINEL: TaskResult | None = None  # stop signal for collectors
-
 logger = logging.getLogger(__name__)
 
 
@@ -54,14 +52,10 @@ async def launch_workers(worker_tasks: list[partial], done_queue: asyncio.Queue[
 
 
 async def collect_results_from_tasks(done_queue: asyncio.Queue[TaskResult | None],
-                                     results_queue: asyncio.Queue[CollectedItem | None]):
-    while True:
-        item = await done_queue.get()
-        if item is SENTINEL:
-            logger.info(f"Consumer finished.")
-            results_queue.put_nowait(SENTINEL)
-            break
-        status, payload = item
+                                     results_queue: asyncio.Queue[CollectedItem],
+                                     total_tasks: int, finished_evt: asyncio.Event):
+    for _ in range(total_tasks):
+        status, payload = await done_queue.get()
         if status == "ok":
             partial_object, results = payload
             logger.info(f"Task completed: {partial_object.func.__name__} {partial_object.args[1:]}")
@@ -70,23 +64,17 @@ async def collect_results_from_tasks(done_queue: asyncio.Queue[TaskResult | None
             e, tb = payload  # from the launcher callback
             logger.error(f"Task failed: {e}\n{tb}", e, tb)
 
-
-async def signal_when_done(launcher_task: asyncio.Task,
-                            done_queue: asyncio.Queue[TaskResult | None],
-                            num_collectors: int) -> None:
-    try:
-        await launcher_task
-    finally:
-        # Always signal collectors to stop, even if launcher errored/cancelled
-        for _ in range(num_collectors):
-            await done_queue.put(None)
+    logger.debug("Event is finished")
+    finished_evt.set()
 
 
 async def function_on_queue_item(queue: asyncio.Queue[CollectedItem], async_func: Callable,
                             results: asyncio.Queue[Any]) -> None:
     while True:
         item = await queue.get()
-        if item is SENTINEL:
+        if item is None:
+            queue.task_done()
             break
         result = await async_func(item)
         results.put_nowait(result)
+        queue.task_done()

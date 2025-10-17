@@ -8,7 +8,7 @@ from functools import partial
 from typing import List
 
 # Project Imports
-from src.async_utils import launch_workers, collect_results_from_tasks, TaskResult, CollectedItem, signal_when_done, \
+from src.async_utils import launch_workers, collect_results_from_tasks, TaskResult, CollectedItem, \
     function_on_queue_item
 from src.dataclasses import ResultEntry
 from src.enums import MessageContentType, SignalType
@@ -133,10 +133,10 @@ async def reject_community_requests(owner: StatusBackend, join_ids: list[str]):
 
 
 async def send_friend_requests(nodes: NodesInformation,
-                               results_queue: asyncio.Queue[CollectedItem],
+                               results_queue: asyncio.Queue[CollectedItem | None],
                                senders: list[str], receivers: list[str],
-                               intermediate_delay: float, max_in_flight: int = 0,
-                               consumers: int = 4):
+                               finished_evt: asyncio.Event,
+                               intermediate_delay: float = 1, max_in_flight: int = 0):
 
     async def _send_friend_request(nodes: NodesInformation, sender: str, receiver: str):
         response = await nodes[sender].wakuext_service.send_contact_request(nodes[receiver].public_key, "Friend Request")
@@ -156,15 +156,14 @@ async def send_friend_requests(nodes: NodesInformation,
         for receiver in receivers
     ]
 
-    collector_task = [asyncio.create_task(collect_results_from_tasks(done_queue, results_queue)) for _ in range(consumers)]
+    collector_task = asyncio.create_task(collect_results_from_tasks(done_queue, results_queue, len(workers_to_launch), finished_evt))
     launcher_task = asyncio.create_task(launch_workers(workers_to_launch, done_queue, intermediate_delay, max_in_flight))
-    sentinel_task = asyncio.create_task(signal_when_done(launcher_task, done_queue, consumers))
 
-    await asyncio.gather(launcher_task, *collector_task, sentinel_task)
+    await asyncio.gather(launcher_task, collector_task)
 
 
-async def accept_friend_requests(nodes: dict[str, StatusBackend], results_queue: asyncio.Queue[CollectedItem],
-                                 consumers: int) -> List[float]:
+async def accept_friend_requests(nodes: dict[str, StatusBackend], results_queue: asyncio.Queue[CollectedItem | None],
+                                 consumers: int, finished_evt: asyncio.Event) -> List[float]:
     # TODO: This should be activated when the signal is received instead of getting looped
     async def _accept_friend_request(queue_result: CollectedItem):
         max_retries = 40
@@ -190,10 +189,18 @@ async def accept_friend_requests(nodes: dict[str, StatusBackend], results_queue:
 
     delays_queue: asyncio.Queue[float] = asyncio.Queue()
 
-    await asyncio.gather(*[asyncio.create_task(
+    workers = [asyncio.create_task(
         function_on_queue_item(results_queue, _accept_friend_request, delays_queue))
         for _ in range(consumers)]
-    )
+
+    await finished_evt.wait()
+    logger.info("All friend requests have been sent. Waiting for all to be accepted.")
+    await results_queue.join()
+    logger.info("All friend requests have been accepted.")
+
+    for _ in range(consumers):
+        results_queue.put_nowait(None)
+    await asyncio.gather(*workers)
 
     delays: list[float] = []
     while not delays_queue.empty():
