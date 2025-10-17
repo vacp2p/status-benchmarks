@@ -2,18 +2,19 @@
 import logging
 import json
 import time
-from typing import List, Dict
+from typing import List, Dict, cast
 from aiohttp import ClientSession, ClientTimeout
 
 # Project Imports
 from src.account_service import AccountAsyncService
 from src.enums import SignalType
+from src.logger import TraceLogger
 from src.rpc_client import AsyncRpcClient
 from src.signal_client import AsyncSignalClient
 from src.wakuext_service import WakuextAsyncService
 from src.wallet_service import WalletAsyncService
 
-logger = logging.getLogger(__name__)
+logger = cast(TraceLogger, logging.getLogger(__name__))
 
 
 class StatusBackend:
@@ -52,9 +53,9 @@ class StatusBackend:
 
     async def api_request(self, method: str, data: Dict) -> dict:
         url = f"{self.api_url}/{method}"
-        logger.debug(f"Sending POST to {url} with data: {data}")
+        logger.trace(f"Sending POST to {url} with data: {data}")
         async with self.session.post(url, json=data) as response:
-            logger.debug(f"Received response from {method}: {response.status}")
+            logger.trace(f"Received response from {method}: {response.status}")
 
             if response.status != 200:
                 body = await response.text()
@@ -73,7 +74,7 @@ class StatusBackend:
 
     async def api_valid_request(self, method: str, data: Dict) -> dict:
         json_data = await self.api_request(method, data)
-        logger.debug(f"Valid response from {method}: {json_data}")
+        logger.trace(f"Valid response from {method}: {json_data}")
         return json_data
 
     async def start_status_backend(self) -> dict:
@@ -81,7 +82,7 @@ class StatusBackend:
         try:
             await self.logout()
         except AssertionError:
-            logger.debug("Failed to log out")
+            logger.debug(f"Failed to log out in {self.base_url}")
 
         method = "InitializeApplication"
         data = {
@@ -160,7 +161,7 @@ class StatusBackend:
     async def logout(self, clean_signals = False) -> dict:
         json_response = await self.api_valid_request("Logout", {})
         _ = await self.signal.wait_for_logout()
-        logger.debug("Successfully logged out")
+        logger.debug(f"Successfully logged out in {self.base_url}")
         if clean_signals:
             self.signal.cleanup_signal_queues()
 
