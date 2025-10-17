@@ -143,7 +143,7 @@ async def send_friend_requests(nodes: NodesInformation,
         # Get responses and filter by contact requests to obtain request ids
         request_response = await get_messages_by_content_type(response, MessageContentType.CONTACT_REQUEST.value)
         # Create a ResultEntry using the first response (there is always only one friend request)
-        request_id = ResultEntry(sender=sender, receiver=receiver, timestamp=int(request_response[0].get("timestamp")),
+        request_result = ResultEntry(sender=sender, receiver=receiver, timestamp=int(request_response[0].get("timestamp")),
                                  result=request_response[0].get("id"))
 
         return request_id
