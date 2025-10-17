@@ -146,7 +146,7 @@ async def send_friend_requests(nodes: NodesInformation,
         request_result = ResultEntry(sender=sender, receiver=receiver, timestamp=int(request_response[0].get("timestamp")),
                                  result=request_response[0].get("id"))
 
-        return request_id
+        return request_result
 
     done_queue: asyncio.Queue[TaskResult | None] = asyncio.Queue()
 
