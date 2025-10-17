@@ -13,7 +13,7 @@ from src.setup_status import initialize_nodes_application, send_friend_requests,
 
 logger = logging.getLogger(__name__)
 
-async def idle_relay():
+async def idle_relay(consumers: int = 4):
     # 1 relay node alice
     # 100 relay nodes - friends
     # friends have accepted contact request with alice, who accepted it
@@ -27,8 +27,8 @@ async def idle_relay():
 
     results_queue: asyncio.Queue[CollectedItem] = asyncio.Queue()
 
-    send_task = asyncio.create_task(send_friend_requests(relay_nodes, results_queue, [alice], friends, 1))
-    accept_task = asyncio.create_task(accept_friend_requests(relay_nodes, results_queue, 4))
+    send_task = asyncio.create_task(send_friend_requests(relay_nodes, results_queue, [alice], friends, 1, consumers))
+    accept_task = asyncio.create_task(accept_friend_requests(relay_nodes, results_queue, consumers))
 
     _, delays = await asyncio.gather(send_task, accept_task)
 

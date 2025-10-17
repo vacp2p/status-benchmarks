@@ -135,7 +135,8 @@ async def reject_community_requests(owner: StatusBackend, join_ids: list[str]):
 async def send_friend_requests(nodes: NodesInformation,
                                results_queue: asyncio.Queue[CollectedItem],
                                senders: list[str], receivers: list[str],
-                               intermediate_delay: float, max_in_flight: int = 0):
+                               intermediate_delay: float, max_in_flight: int = 0,
+                               consumers: int = 4):
 
     async def _send_friend_request(nodes: NodesInformation, sender: str, receiver: str):
         response = await nodes[sender].wakuext_service.send_contact_request(nodes[receiver].public_key, "Friend Request")
@@ -155,9 +156,9 @@ async def send_friend_requests(nodes: NodesInformation,
         for receiver in receivers
     ]
 
-    collector_task = [asyncio.create_task(collect_results_from_tasks(done_queue, results_queue)) for _ in range(4)]
+    collector_task = [asyncio.create_task(collect_results_from_tasks(done_queue, results_queue)) for _ in range(consumers)]
     launcher_task = asyncio.create_task(launch_workers(workers_to_launch, done_queue, intermediate_delay, max_in_flight))
-    sentinel_task = asyncio.create_task(signal_when_done(launcher_task, done_queue, 4))
+    sentinel_task = asyncio.create_task(signal_when_done(launcher_task, done_queue, consumers))
 
     await asyncio.gather(launcher_task, *collector_task, sentinel_task)
 
