@@ -78,3 +78,13 @@ async def function_on_queue_item(queue: asyncio.Queue[CollectedItem], async_func
         result = await async_func(item)
         results.put_nowait(result)
         queue.task_done()
+
+
+async def cleanup_queue_on_event(finished_evt: asyncio.Event, queue: asyncio.Queue, consumers: int = 1):
+    await finished_evt.wait()
+    logger.debug("Event triggered. Waiting for queue to be finished.")
+    await queue.join()
+    logger.debug("Queue finished.")
+
+    for _ in range(consumers):
+        queue.put_nowait(None)
