@@ -6,7 +6,7 @@ import random
 # Project Imports
 import src.logger
 from src import kube_utils, setup_status
-from src.async_utils import CollectedItem
+from src.async_utils import CollectedItem, cleanup_queue_on_event
 from src.inject_messages import inject_messages_one_to_one, inject_messages_group_chat
 from src.setup_status import initialize_nodes_application, send_friend_requests, accept_friend_requests, \
     decline_friend_requests, create_group_chat, add_contacts
@@ -29,9 +29,14 @@ async def idle_relay(consumers: int = 4):
     finished_evt = asyncio.Event()
 
     send_task = asyncio.create_task(send_friend_requests(relay_nodes, results_queue, [alice], friends, finished_evt))
-    accept_task = asyncio.create_task(accept_friend_requests(relay_nodes, results_queue, consumers, finished_evt))
+    accept_task = asyncio.create_task(accept_friend_requests(relay_nodes, results_queue, consumers))
+    cleanup_task = asyncio.create_task(cleanup_queue_on_event(finished_evt, results_queue, 4))
+    _, delays_queue, _ = await asyncio.gather(send_task, accept_task, cleanup_task)
 
-    _, delays = await asyncio.gather(send_task, accept_task)
+
+    delays: list[float] = []
+    while not delays_queue.empty():
+        delays.append(delays_queue.get_nowait())
 
     logger.info(f"Delays are: {delays}")
 

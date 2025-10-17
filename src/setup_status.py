@@ -163,7 +163,7 @@ async def send_friend_requests(nodes: NodesInformation,
 
 
 async def accept_friend_requests(nodes: dict[str, StatusBackend], results_queue: asyncio.Queue[CollectedItem | None],
-                                 consumers: int, finished_evt: asyncio.Event) -> List[float]:
+                                 consumers: int) -> asyncio.Queue[float]:
     # TODO: This should be activated when the signal is received instead of getting looped
     async def _accept_friend_request(queue_result: CollectedItem):
         max_retries = 40
@@ -193,20 +193,9 @@ async def accept_friend_requests(nodes: dict[str, StatusBackend], results_queue:
         function_on_queue_item(results_queue, _accept_friend_request, delays_queue))
         for _ in range(consumers)]
 
-    await finished_evt.wait()
-    logger.info("All friend requests have been sent. Waiting for all to be accepted.")
-    await results_queue.join()
-    logger.info("All friend requests have been accepted.")
-
-    for _ in range(consumers):
-        results_queue.put_nowait(None)
     await asyncio.gather(*workers)
 
-    delays: list[float] = []
-    while not delays_queue.empty():
-        delays.append(delays_queue.get_nowait())
-
-    return delays
+    return delays_queue
 
 
 async def add_contacts(nodes: dict[str, StatusBackend], adders: list[str], contacts: list[str]):
