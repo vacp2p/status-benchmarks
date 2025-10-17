@@ -2,18 +2,27 @@
 import asyncio
 import logging
 import traceback
+from collections.abc import Callable
 from functools import partial
-from typing import List, Tuple
+from typing import Literal, Any
 
 # Project Imports
+from src.dataclasses import ResultEntry
 
+
+RequestResult = tuple[partial, ResultEntry]
+RequestError  = tuple[Exception, str]
+
+TaskOk  = tuple[Literal["ok"], RequestResult]
+TaskErr = tuple[Literal["err"], RequestError]
+TaskResult = TaskOk | TaskErr
+
+CollectedItem = tuple[str, ResultEntry]
 
 logger = logging.getLogger(__name__)
-# [(node_sender, {node_receiver: (timestamp, message)}), ...]
-RequestResult = Tuple[str, dict[str, Tuple[int, str]]]
 
 
-async def launch_workers(worker_tasks: List[partial], done_queue: asyncio.Queue[tuple[str, object]], intermediate_delay: float,
+async def launch_workers(worker_tasks: list[partial], done_queue: asyncio.Queue[TaskResult], intermediate_delay: float,
                          max_in_flight: int = 0) -> None:
 
     sem = asyncio.Semaphore(max_in_flight) if max_in_flight > 0 else None
@@ -42,16 +51,40 @@ async def launch_workers(worker_tasks: List[partial], done_queue: asyncio.Queue[
             await asyncio.sleep(intermediate_delay)
 
 
-async def collect_results(done_q: asyncio.Queue[tuple[str, object]], total_tasks: int) -> List[RequestResult]:
-    collected: List[RequestResult] = []
+async def collect_results_from_tasks(done_queue: asyncio.Queue[TaskResult | None],
+                                     results_queue: asyncio.Queue[CollectedItem],
+                                     total_tasks: int, finished_evt: asyncio.Event):
     for _ in range(total_tasks):
-        status, payload = await done_q.get()
+        status, payload = await done_queue.get()
         if status == "ok":
             partial_object, results = payload
             logger.info(f"Task completed: {partial_object.func.__name__} {partial_object.args[1:]}")
-            collected.append(results)
+            results_queue.put_nowait((partial_object.func.__name__, results))
         else:
             e, tb = payload  # from the launcher callback
             logger.error(f"Task failed: {e}\n{tb}", e, tb)
 
-    return collected
+    logger.debug("Event is finished")
+    finished_evt.set()
+
+
+async def function_on_queue_item(queue: asyncio.Queue[CollectedItem], async_func: Callable,
+                            results: asyncio.Queue[Any]) -> None:
+    while True:
+        item = await queue.get()
+        if item is None:
+            queue.task_done()
+            break
+        result = await async_func(item)
+        results.put_nowait(result)
+        queue.task_done()
+
+
+async def cleanup_queue_on_event(finished_evt: asyncio.Event, queue: asyncio.Queue, consumers: int = 1):
+    await finished_evt.wait()
+    logger.debug("Event triggered. Waiting for queue to be finished.")
+    await queue.join()
+    logger.debug("Queue finished.")
+
+    for _ in range(consumers):
+        queue.put_nowait(None)

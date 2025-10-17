@@ -6,13 +6,14 @@ import random
 # Project Imports
 import src.logger
 from src import kube_utils, setup_status
+from src.async_utils import CollectedItem, cleanup_queue_on_event
 from src.inject_messages import inject_messages_one_to_one, inject_messages_group_chat
 from src.setup_status import initialize_nodes_application, send_friend_requests, accept_friend_requests, \
     decline_friend_requests, create_group_chat, add_contacts
 
 logger = logging.getLogger(__name__)
 
-async def idle_relay():
+async def idle_relay(consumers: int = 4):
     # 1 relay node alice
     # 100 relay nodes - friends
     # friends have accepted contact request with alice, who accepted it
@@ -24,15 +25,20 @@ async def idle_relay():
     alice = "status-backend-relay-0"
     friends = [key for key in relay_nodes.keys() if key != alice]
 
-    requests_made = await send_friend_requests(relay_nodes, [alice], friends, 1)
-    logger.info("Accepting friend requests")
-    delays = await accept_friend_requests(relay_nodes, requests_made)
-    # TODO: These delays include the accumulation of intermediate_delays, they are not accurate.
-    # Intermediate delay is needed to not saturate status node, otherwise request don't arrive.
-    # TODO: We should merge send and receive operations in asynq queues as well
+    results_queue: asyncio.Queue[CollectedItem | None] = asyncio.Queue()
+    finished_evt = asyncio.Event()
+
+    send_task = asyncio.create_task(send_friend_requests(relay_nodes, results_queue, [alice], friends, finished_evt))
+    accept_task = asyncio.create_task(accept_friend_requests(relay_nodes, results_queue, consumers))
+    cleanup_task = asyncio.create_task(cleanup_queue_on_event(finished_evt, results_queue, 4))
+    _, delays_queue, _ = await asyncio.gather(send_task, accept_task, cleanup_task)
+
+
+    delays: list[float] = []
+    while not delays_queue.empty():
+        delays.append(delays_queue.get_nowait())
+
     logger.info(f"Delays are: {delays}")
-    logger.info("Waiting 30 seconds")
-    await asyncio.sleep(30)
 
     logger.info("Shutting down node connections")
     await asyncio.gather(*[node.shutdown() for node in relay_nodes.values()])
