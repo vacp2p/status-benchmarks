@@ -4,7 +4,7 @@ import contextlib
 import json
 import logging
 import os
-from typing import Optional, AsyncGenerator
+from typing import Optional, AsyncGenerator, cast
 from aiohttp import ClientSession, ClientWebSocketResponse, WSMsgType
 from pathlib import Path
 from datetime import datetime
@@ -12,8 +12,9 @@ from collections import deque
 
 # Project Imports
 from src.enums import SignalType
+from src.logger import TraceLogger
 
-logger = logging.getLogger(__name__)
+logger = cast(TraceLogger, logging.getLogger(__name__))
 
 LOG_SIGNALS_TO_FILE = False
 SIGNALS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -77,7 +78,7 @@ class AsyncSignalClient:
                 await self.listener_task
 
     async def _listen(self):
-        logger.debug("WebSocket listener started")
+        logger.trace("WebSocket listener started")
         async for msg in self.ws:
             if msg.type == WSMsgType.TEXT:
                 await self.on_message(msg.data)
@@ -102,7 +103,7 @@ class AsyncSignalClient:
 
     async def on_message(self, signal: str):
         signal_data = json.loads(signal)
-        logger.debug(f"Received WebSocket message: {signal_data}")
+        logger.trace(f"Received WebSocket message: {signal_data}")
 
         if LOG_SIGNALS_TO_FILE:
             pass  # TODO: write to file if needed
@@ -110,16 +111,16 @@ class AsyncSignalClient:
         signal_type = signal_data.get("type")
         if signal_type in self.signal_queues:
             await self.signal_queues[signal_type].put(signal_data)
-            logger.debug(f"Queued signal: {signal_type}")
+            logger.trace(f"Queued signal: {signal_type}")
         else:
-            logger.debug(f"Ignored signal not in await list: {signal_type}")
+            logger.trace(f"Ignored signal not in await list: {signal_type}")
 
     async def wait_for_signal(self, signal_type: str, timeout: int = 20) -> dict:
         if signal_type not in self.signal_queues:
             raise ValueError(f"Signal type {signal_type} is not in the list of awaited signals")
         try:
             signal = await asyncio.wait_for(self.signal_queues[signal_type].get(), timeout)
-            logger.debug(f"Received {signal_type} signal: {signal}")
+            logger.trace(f"Received {signal_type} signal: {signal} in {self.url}")
             return signal
         except asyncio.TimeoutError:
             raise TimeoutError(f"Signal {signal_type} not received in {timeout} seconds")
@@ -136,7 +137,7 @@ class AsyncSignalClient:
         return self.signal_queues[signal_type].recent()
 
     async def wait_for_login(self) -> dict:
-        logger.debug("Waiting for login signal...")
+        logger.debug(f"Waiting for login signal in {self.url}...")
         signal = await self.wait_for_signal(SignalType.NODE_LOGIN.value)
         logger.debug(f"Login signal received: {signal}")
         if "error" in signal.get("event", {}):
@@ -163,7 +164,7 @@ class AsyncSignalClient:
                 if event_string in message[1]:
                     # Remove the found signal from the buffer
                     # queue.buffer.remove(signal)
-                    logger.info(f"Found {signal_type} containing '{event_string}' in messages")
+                    logger.debug(f"Found {signal_type} containing '{event_string}' in messages")
                     return message
 
             if asyncio.get_event_loop().time() > end_time:

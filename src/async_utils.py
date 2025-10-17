@@ -32,7 +32,7 @@ async def launch_workers(worker_tasks: list[partial], done_queue: asyncio.Queue[
             await sem.acquire()
 
         # worker.args has (nodes, sender, receiver)
-        logger.info(f"Launching task {worker.func.__name__}: {worker.args[1:]}")
+        logger.debug(f"Launching task {worker.func.__name__}: {worker.args[1:]}")
         fut = asyncio.create_task(worker())
 
         def _on_done(t: asyncio.Task, j=worker) -> None:
@@ -58,7 +58,7 @@ async def collect_results_from_tasks(done_queue: asyncio.Queue[TaskResult | None
         status, payload = await done_queue.get()
         if status == "ok":
             partial_object, results = payload
-            logger.info(f"Task completed: {partial_object.func.__name__} {partial_object.args[1:]}")
+            logger.debug(f"Task completed: {partial_object.func.__name__} {partial_object.args[1:]}")
             results_queue.put_nowait((partial_object.func.__name__, results))
         else:
             e, tb = payload  # from the launcher callback

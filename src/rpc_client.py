@@ -2,13 +2,14 @@
 import asyncio
 import json
 import logging
-from typing import List, Optional, Any
+from typing import List, Optional, Any, cast
 from aiohttp import ClientSession, ClientTimeout, ClientError
 from tenacity import retry, stop_after_delay, wait_fixed, retry_if_exception_type
 
 # Project Imports
+from src.logger import TraceLogger
 
-logger = logging.getLogger(__name__)
+logger = cast(TraceLogger, logging.getLogger(__name__))
 
 
 class AsyncRpcClient:
@@ -54,7 +55,7 @@ class AsyncRpcClient:
         payload = {"jsonrpc": "2.0", "method": method, "id": request_id, "params": params or []}
 
         if enable_logging:
-            logger.debug(f"Sending async POST to {url} with data: {json.dumps(payload, sort_keys=True)}")
+            logger.trace(f"Sending async POST to {url} with data: {json.dumps(payload, sort_keys=True)}")
 
         async with self.session.post(url, json=payload) as response:
             resp_text = await response.text()
@@ -68,7 +69,7 @@ class AsyncRpcClient:
                 raise AssertionError(f"Invalid JSON in response: {resp_text}")
 
             if enable_logging:
-                logger.debug(f"Received response: {json.dumps(resp_json, sort_keys=True)}")
+                logger.trace(f"Received response: {json.dumps(resp_json, sort_keys=True)}")
 
             if "error" in resp_json:
                 raise AssertionError(f"JSON-RPC Error: {resp_json['error']}")
