@@ -56,7 +56,7 @@ spec:
       serviceAccountName: controlbox-sa
       containers:
       - name: controlbox
-        image: <your_controlbox_image>
+        image: soutullostatus/controlbox-status:v1.0.0
         imagePullPolicy: Always
         ports:
         - containerPort: 22
