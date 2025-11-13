@@ -31,7 +31,7 @@ async def codex_test():
 
     # Add members but one
     nodes = [key for key in relay_nodes.keys() if key != "status-backend-relay-codex-0"]
-    new_member = nodes[-1]
+    future_member = nodes[-1]
     members = nodes[:-1]
     join_ids = await request_join_nodes_to_community(relay_nodes, members, community_id)
     await accept_community_requests(owner_node, join_ids)
@@ -48,21 +48,21 @@ async def codex_test():
     # Do some publishing
     await inject_messages(owner_node, 5, community_chat_id, 2)
 
-    # Archival should be created after 5 seconds
-    logger.info("Waiting 5 seconds")
-    await asyncio.sleep(5)
+    # Archival should be created after 70 seconds
+    logger.info("Waiting 70 seconds")
+    await asyncio.sleep(70)
 
     # Add another member
-    join_ids = await request_join_nodes_to_community(relay_nodes, [new_member], community_id)
+    join_ids = await request_join_nodes_to_community(relay_nodes, [future_member], community_id)
     _ = await accept_community_requests(owner_node, join_ids)
 
-    # Archival should be created after 60 seconds
-    logger.info("Waiting 60 seconds")
-    await asyncio.sleep(60)
+    logger.info("Waiting 10 seconds")
+    await asyncio.sleep(10)
 
-    # All members should have the community archive
+    # All members should have the community archive, including the future member
     for node in nodes:
         await relay_nodes[node].signal.wait_for_signal(SignalType.COMMUNITY_IMPORTING_HISTORY_ARCHIVE_MESSAGES_FINISHED.value, timeout=20)
+        logger.info(f"Node {node} has imported the community archive.")
 
     logger.info("Shutting down node connections")
     await asyncio.gather(*[node.shutdown() for node in relay_nodes.values()])
