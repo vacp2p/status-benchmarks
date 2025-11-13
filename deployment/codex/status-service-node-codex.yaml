@@ -114,7 +114,7 @@ spec:
               --filter=true \
               --store=true \
               --store-message-db-url=${POSTGRES_URL} \
-              --store-message-retention-policy="time:90" \
+              --store-message-retention-policy="time:30" \
               --max-connections=800 \
               --discv5-discovery=true \
               --discv5-enr-auto-update=True \
