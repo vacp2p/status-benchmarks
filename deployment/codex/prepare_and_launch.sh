@@ -27,6 +27,7 @@ kubectl cp ../../requirements.txt "$namespace/$controlbox_name:/home/code/"
 
 # Create a Python venv (installs python3-venv if missing)
 kubectl exec -n "$namespace" "$controlbox_name" -- bash -c "
+    apt-get update -qq && apt-get install -y -qq python3-venv &&
     python3 -m venv /home/venv &&
     source /home/venv/bin/activate &&
     pip install --upgrade pip &&
