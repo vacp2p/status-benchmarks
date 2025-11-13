@@ -18,10 +18,16 @@ class WakuextAsyncService(AsyncService):
             assert json_response["error"]["message"] == "messenger already started"
             return
 
-    async def create_community(self, name: str, color="#ffffff", membership: int = 3) -> dict:
+    async def create_community(self, name: str, color="#ffffff", membership: int = 3, history_archive_support_enabled=False) -> dict:
         # TODO check what is membership = 3
-        params = [{"membership": membership, "name": name, "color": color, "description": name}]
+        params = [{"membership": membership, "name": name, "color": color, "description": name,
+                   "historyArchiveSupportEnabled": history_archive_support_enabled}]
         json_response = await self.rpc_request("createCommunity", params)
+        return json_response
+
+    async def create_community_chat(self, community_id: str, c: dict):
+        params = [community_id, c]
+        json_response = await self.rpc_request("createCommunityChat", params)
         return json_response
 
     async def fetch_community(self, community_key: str) -> dict:
@@ -84,3 +90,31 @@ class WakuextAsyncService(AsyncService):
         params = [{"id": contact_id, "nickname": "fake_nickname", "displayName": displayName, "ensName": ""}]
         json_response = await self.rpc_request("addContact", params)
         return json_response
+
+    async def get_peer_id(self):
+        json_response = await self.rpc_request("peerID", [])
+        return json_response
+
+    async def set_archive_distribution_preference(self, preference: str):
+        params = [{"preference": preference}]
+        response = await self.rpc_request("setArchiveDistributionPreference", params)
+        return response
+
+    async def get_message_archival(self):
+        json_response = await self.rpc_request("getMessageArchiveInterval", [])
+        return json_response
+
+    async def has_community_archive(self, community_id: str):
+        params = [community_id]
+        json_response = await self.rpc_request("hasCommunityArchive", params)
+        return json_response
+
+    async def debug(self):
+        params = []
+        json_response = await self.rpc_request("debug", params)
+        return json_response
+
+    async def connect(self, peerId: str, addrs: list = []):
+        params = [peerId, addrs]
+        response = await self.rpc_request("connect", params)
+        return response

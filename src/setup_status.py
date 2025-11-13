@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 NodesInformation = dict[str, StatusBackend]
 
 
-async def initialize_nodes_application(pod_names: list[str], wakuV2LightClient=False) -> NodesInformation:
+async def initialize_nodes_application(pod_names: list[str], wakuV2LightClient=False, codex_config_enabled=False, message_archive_interval=60, import_initial_delay=5) -> NodesInformation:
     # We don't need a lock here because we cannot have two pods with the same name, and no other operations are done.
     nodes_status: NodesInformation = {}
 
@@ -28,10 +28,11 @@ async def initialize_nodes_application(pod_names: list[str], wakuV2LightClient=F
             status_backend = StatusBackend(
                 url=f"http://{pod_name}:3333",
                 await_signals=["messages.new", "message.delivered", "node.ready", "node.started", "node.login",
-                               "node.stopped"]
+                               "node.stopped", "community.downloadingHistoryArchivesFinished"]
             )
             await status_backend.start_status_backend()
-            await status_backend.create_account_and_login(wakuV2LightClient=wakuV2LightClient)
+            await status_backend.create_account_and_login(wakuV2LightClient=wakuV2LightClient, codex_config_enabled=codex_config_enabled, message_archive_interval=message_archive_interval, import_initial_delay=import_initial_delay)
+            await status_backend.wakuext_service.set_archive_distribution_preference("codex")
             await status_backend.wallet_service.start_wallet()
             await status_backend.wakuext_service.start_messenger()
             nodes_status[pod_name.split(".")[0]] = status_backend

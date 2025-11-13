@@ -130,10 +130,14 @@ class StatusBackend:
             "customizationColor": "red",
             # Logs config
             "logEnabled": True,
+            "logToStderr": True,
             "logLevel": "DEBUG",
             # Waku config
             "wakuV2LightClient": kwargs.get("wakuV2LightClient", False),
             "wakuV2Fleet": "dst.dev",
+            "codexConfigEnabled": kwargs.get("codex_config_enabled", False),
+            "importInitialDelay": kwargs.get("import_initial_delay", None),
+            "messageArchiveInterval": kwargs.get("message_archive_interval", None),
         }
         self._set_networks(data)
         return data
