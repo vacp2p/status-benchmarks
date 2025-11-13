@@ -1,0 +1,88 @@
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: status-backend-relay-codex
+  namespace: status-go-test
+spec:
+  replicas: 3
+  podManagementPolicy: Parallel
+  serviceName: status-backend-relay-codex
+  selector:
+    matchLabels:
+      app: status-backend-relay-codex
+  template:
+    metadata:
+      labels:
+        app: status-backend-relay-codex
+    spec:
+      serviceAccountName: controlbox-sa
+      dnsConfig:
+        searches:
+          - status-backend-relay-codex.status-go-test.svc.cluster.local
+          - status-service-bootstrap.status-go-test.svc.cluster.local
+          - status-service-node.status-go-test.svc.cluster.local
+      initContainers:
+      - name: getenr
+        image: soutullostatus/getenr:v1.1.0
+        imagePullPolicy: IfNotPresent
+        volumeMounts:
+          - name: enr-data
+            mountPath: /etc/enr
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            /app/getenr.sh 3 status-service-bootstrap.status-go-test /etc/enr/BOOT_ENRS && \
+            /app/getenr.sh 3 status-service-node.status-go-test /etc/enr/STORE_ENRS
+      - name: config-init
+        image: soutullostatus/status-init:v1.2.0
+        imagePullPolicy: IfNotPresent
+        command:
+          - /bin/bash
+          - -c
+          - |
+            set -a
+            source /etc/enr/BOOT_ENRS
+            set +a
+            source /etc/enr/STORE_ENRS
+            python /init_container.py
+        volumeMounts:
+        - name: enr-data
+          mountPath: /etc/enr
+        - name: relay-config
+          mountPath: /static/configs
+      containers:
+        - name: status-backend
+          image: soutullostatus/statusgo-codex-066488ea2:latest
+          imagePullPolicy: IfNotPresent
+          args: ["status-backend", "-address", "0.0.0.0:3333"]
+          ports:
+            - containerPort: 3333
+              name: http
+            - containerPort: 30303
+              name: waku
+          volumeMounts:
+            - mountPath: "/static/configs"
+              name: relay-config
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  curl -X GET http://localhost:3333/health || exit 1
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 120
+        - name: status-subscriber
+          image: soutullostatus/status-subscriber:v1.0.0
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: WEBSOCKET_URL
+              value: "ws://localhost:3333/signals"
+      volumes:
+        - name: relay-config
+          emptyDir: {}
+        - name: enr-data
+          emptyDir: {}

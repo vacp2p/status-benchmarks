@@ -1,0 +1,54 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: config-init-sa
+  namespace: status-go-test
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: pod-reader
+  namespace: status-go-test
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: pod-reader-binding
+  namespace: status-go-test
+subjects:
+- kind: ServiceAccount
+  name: config-init-sa
+  namespace: status-go-test
+roleRef:
+  kind: ClusterRole
+  name: pod-reader
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: status-backend-relay-codex
+  namespace: status-go-test
+spec:
+  # Headless service to get per-pod DNS names
+  clusterIP: None
+  selector:
+    app: status-backend-relay-codex
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: status-backend-relay-codex-2
+  namespace: status-go-test
+spec:
+  # Headless service to get per-pod DNS names
+  clusterIP: None
+  selector:
+    app: status-backend-relay-codex-2
