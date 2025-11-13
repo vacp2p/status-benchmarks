@@ -1,6 +1,6 @@
 FROM debian:12-slim
 
-RUN apt-get update && apt-get install -y curl wget python3 python3-pip openssh-server iputils-ping net-tools screen parallel \
+RUN apt-get update && apt-get install -y curl wget python3 python3-pip python3-venv openssh-server iputils-ping net-tools screen parallel \
     && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /run/sshd /root/.ssh && chmod 0755 /run/sshd && chmod 700 /root/.ssh
