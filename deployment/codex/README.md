@@ -18,7 +18,8 @@ There is a bit more of information in the `controlbox/README.md` file.
 
 ## Deploy everything
 
-`deploy_codex_local.sh` will deploy:
+Run `./prepare_and_launch.sh`
+This will create the K8s namespace, then `deploy_codex_local.sh` will deploy:
 - Anvil, SNT contracts, services and everything that can be needed for more complex scenarios
 - Controlbox pod
 - K8s services
@@ -27,13 +28,7 @@ There is a bit more of information in the `controlbox/README.md` file.
 - Status-codex nodes (without being initialized)
   - You can modify how many nodes you want to deploy in the replicas field in `status-backend-relay-codex.yaml`
 
-Note that if you want to repeat the deployment, you just need to run `cleanup_local.sh` and `deploy_codex_local.sh` again.
-If the cluster still has anvil and controlbox, there are things you need to comment in `deploy_codex_local.sh`.
-Those deployments are only needed on a fresh cluster.
-
-## Upload code to controlbox and execute
-
-Run `./prepare_and_launch.sh`
+After this, the code will be copied to the controlbox pod and the python scripts will be executed.
 
 Editing and rerunning process is much faster and easier if you create an ssh venv from your IDE. Pycharm licensed supports this. I guess
 this can also be done with vscode. The only thing you need to do is enable the port forward, and the IDE should let you
