@@ -7,7 +7,7 @@ import src.logger
 from src.benchmark_scenarios.communities import store_performance, message_sending, request_to_join_community_mix, \
     isolated_traffic_chat_messages_1, subscription_performance, isolated_traffic_request_to_join, \
     isolated_traffic_chat_messages_2
-from src.benchmark_scenarios.meeting import test_function
+#from src.benchmark_scenarios.meeting import test_function
 from src.benchmark_scenarios.private_chats import idle_relay, idle_light, create_private_group, contact_request, \
     send_one_to_one_message, send_group_message
 from src.codex.test import codex_test
