@@ -7,6 +7,7 @@ kubectl apply -f status-backend-relay-codex-services.yaml
 ##### JUST RUN ONCE #####
 
 kubectl apply -f ../service/status-service-bootstrap.yaml
+kubectl apply -f ../service/status-service-bootstrap-service.yaml
 kubectl rollout status --watch --timeout=30000s statefulset/status-service-bootstrap -n status-go-test
 
 kubectl apply -f status-service-node-codex.yaml
