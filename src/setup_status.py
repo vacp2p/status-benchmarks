@@ -164,15 +164,17 @@ async def send_friend_requests(nodes: NodesInformation,
                                results_queue: asyncio.Queue[CollectedItem | None],
                                senders: list[str], receivers: list[str],
                                finished_evt: asyncio.Event,
+                               cap_num_receivers: int | None = None,
                                intermediate_delay: float = 1, max_in_flight: int = 0):
-
     async def _send_friend_request(nodes: NodesInformation, sender: str, receiver: str):
-        response = await nodes[sender].wakuext_service.send_contact_request(nodes[receiver].public_key, "Friend Request")
+        response = await nodes[sender].wakuext_service.send_contact_request(nodes[receiver].public_key,
+                                                                            "Friend Request")
         # Get responses and filter by contact requests to obtain request ids
         request_response = await get_messages_by_content_type(response, MessageContentType.CONTACT_REQUEST.value)
         # Create a ResultEntry using the first response (there is always only one friend request)
-        request_result = ResultEntry(sender=sender, receiver=receiver, timestamp=int(request_response[0].get("timestamp")),
-                                 result=request_response[0].get("id"))
+        request_result = ResultEntry(sender=sender, receiver=receiver,
+                                     timestamp=int(request_response[0].get("timestamp")),
+                                     result=request_response[0].get("id"))
 
         return request_result
 
@@ -180,12 +182,16 @@ async def send_friend_requests(nodes: NodesInformation,
 
     workers_to_launch = [
         partial(_send_friend_request, nodes, sender, receiver)
-        for sender in senders
-        for receiver in receivers
+        for i, sender in enumerate(senders)
+        for receiver in
+        (receivers if not cap_num_receivers else receivers[i * cap_num_receivers: (i + 1) * cap_num_receivers])
     ]
 
-    collector_task = asyncio.create_task(collect_results_from_tasks(done_queue, results_queue, len(workers_to_launch), finished_evt))
-    launcher_task = asyncio.create_task(launch_workers(workers_to_launch, done_queue, intermediate_delay, max_in_flight))
+    logger.info(f"Sending friend requests from {len(senders)} nodes to {len(receivers)} nodes")
+    collector_task = asyncio.create_task(
+        collect_results_from_tasks(done_queue, results_queue, len(workers_to_launch), finished_evt))
+    launcher_task = asyncio.create_task(
+        launch_workers(workers_to_launch, done_queue, intermediate_delay, max_in_flight))
 
     await asyncio.gather(launcher_task, collector_task)
 
