@@ -246,34 +246,38 @@ async def add_contacts(nodes: dict[str, StatusBackend], adders: list[str], conta
     logger.info(f"All {len(contacts)} contacts added to {len(adders)} nodes.")
 
 
-async def decline_friend_requests(nodes: dict[str, StatusBackend], requests: list[(str, dict[str, str])]):
-    # Flatten all tasks into a single list and execute them concurrently
-    async def _decline_friend_request(nodes: dict[str, StatusBackend], sender: str, receiver: str, request_id: str):
+async def decline_friend_requests(nodes: dict[str, StatusBackend], results_queue: asyncio.Queue[CollectedItem | None],
+                                 consumers: int) -> asyncio.Queue[float]:
+    async def _decline_friend_request(queue_result: CollectedItem):
         max_retries = 40
-        retry_interval = 0.5
+        retry_interval = 2
+        function_name, result_entry = queue_result
 
         for attempt in range(max_retries):
             try:
-                _ = await nodes[receiver].wakuext_service.decline_contact_request(request_id)
+                _ = await nodes[result_entry.receiver].wakuext_service.decline_contact_request(result_entry.result)
+                # TODO: Is there a signal for this?
                 return _
             except Exception as e:
-                logging.error(f"Attempt {attempt + 1}/{max_retries}: Unexpected error: {e}")
-                time.sleep(retry_interval)
+                logging.error(
+                    f"Attempt {attempt + 1}/{max_retries} from {result_entry.sender} to {result_entry.receiver}: "
+                    f"Unexpected error declining friend request: {e}")
+                await asyncio.sleep(2)
 
         raise Exception(
             f"Failed to reject friend request in {max_retries * retry_interval} seconds."
         )
 
-    _ = await asyncio.gather(
-        *[
-            _decline_friend_request(nodes, sender, receiver, request_id)
-            for sender, receivers in requests
-            for receiver, request_id in receivers.items()
-        ]
-    )
+    delays_queue: asyncio.Queue[float] = asyncio.Queue()
 
-    total_requests = sum(len(receivers) for _, receivers in requests)
-    logger.info(f"All {total_requests} friend requests rejected.")
+    logger.info(f"Declining friend requests from {len(nodes)}<-wrong nodes")
+    workers = [asyncio.create_task(
+        function_on_queue_item(results_queue, _decline_friend_request, delays_queue))
+        for _ in range(consumers)]
+
+    await asyncio.gather(*workers)
+
+    return delays_queue
 
 
 async def create_group_chat(admin: StatusBackend, receivers: list[str]):
