@@ -202,20 +202,22 @@ async def accept_friend_requests(nodes: dict[str, StatusBackend], results_queue:
     async def _accept_friend_request(queue_result: CollectedItem):
         max_retries = 40
         retry_interval = 2
+        function_name, result_entry = queue_result
 
         for attempt in range(max_retries):
-            function_name, result_entry = queue_result
             try:
                 _ = await nodes[result_entry.receiver].wakuext_service.accept_contact_request(result_entry.result)
                 accepted_signal = f"@{nodes[result_entry.receiver].public_key} accepted your contact request"
-                message = await nodes[result_entry.sender].signal.find_signal_containing_string(SignalType.MESSAGES_NEW.value,
-                                                                                                event_string=accepted_signal,
-                                                                                                timeout=10)
+                message = await nodes[result_entry.sender].signal.find_signal_containing_string(
+                    SignalType.MESSAGES_NEW.value,
+                    event_string=accepted_signal,
+                    timeout=10)
                 return message[0] - int(result_entry.timestamp) // 1000  # Convert unix milliseconds to seconds
             except Exception as e:
-                logging.error(f"Attempt {attempt + 1}/{max_retries} from {result_entry.sender} to {result_entry.receiver}: "
-                              f"Unexpected error accepting friend request: {e}")
-                time.sleep(2)
+                logging.error(
+                    f"Attempt {attempt + 1}/{max_retries} from {result_entry.sender} to {result_entry.receiver}: "
+                    f"Unexpected error accepting friend request: {e}")
+                await asyncio.sleep(2)
 
         raise Exception(
             f"Failed to accept friend request in {max_retries * retry_interval} seconds."
@@ -223,6 +225,7 @@ async def accept_friend_requests(nodes: dict[str, StatusBackend], results_queue:
 
     delays_queue: asyncio.Queue[float] = asyncio.Queue()
 
+    logger.info(f"Accepting friend requests from {len(nodes)}<-wrong nodes")
     workers = [asyncio.create_task(
         function_on_queue_item(results_queue, _accept_friend_request, delays_queue))
         for _ in range(consumers)]
