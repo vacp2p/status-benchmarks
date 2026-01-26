@@ -150,7 +150,7 @@ async def send_one_to_one_message(consumers: int = 4):
     logger.info("Finished send_one_to_one_message")
 
 
-async def create_private_group():
+async def create_private_group(consumers: int = 4):
     # 10 admin nodes
     # 100 single-group members
     # Each admin node create a group and invite 10 single-group members in it, who accept the invite
@@ -159,21 +159,24 @@ async def create_private_group():
     backend_relay_pods = kube_utils.get_pods("status-backend-relay", "status-go-test")
     relay_nodes = await initialize_nodes_application(backend_relay_pods)
 
+    logger.info("Waiting 60 seconds after nodes initialization")
+    await asyncio.sleep(60)
+
     backend_relay_pods = [pod_name.split(".")[0] for pod_name in backend_relay_pods]
 
     admin_nodes = backend_relay_pods[:10]
-    members = backend_relay_pods[10:110]
+    members = backend_relay_pods[10:]
     members_pub_keys = [relay_nodes[node].public_key for node in members]
 
-    # In order to create a group, first they need to be friends
-    friend_requests = await send_friend_requests(relay_nodes, admin_nodes, members)
-    logger.info("Accepting friend requests")
-    _ = await accept_friend_requests(relay_nodes, friend_requests)
+    delays = await send_friend_requests_util(relay_nodes, admin_nodes, members, accept_friend_requests, consumers)
     _ = await add_contacts(relay_nodes, admin_nodes, members)
+
+    await asyncio.sleep(30)
 
     # 1 admin to 10 users, no overlap
     await asyncio.gather(*[create_group_chat(relay_nodes[admin], members_pub_keys[10*i: (10*i)+10]) for i, admin in enumerate(admin_nodes)])
-
+    # TODO check they really are in the group chat?
+    await asyncio.sleep(30)
     logger.info("Shutting down node connections")
     await asyncio.gather(*[node.shutdown() for node in relay_nodes.values()])
     logger.info("Finished create_private_group")
