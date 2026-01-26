@@ -205,27 +205,25 @@ async def isolated_traffic_chat_messages_1():
     # Community members send 1 message every 10s, measure volume
     # Measure non-joined nodes have minimal traffic not correlated to community traffic in 1 and 2
     kube_utils.setup_kubernetes_client()
-    backend_relay_pods = kube_utils.get_pods("status-backend-relay", "status-go-test")
-    relay_nodes = await setup_status.initialize_nodes_application(backend_relay_pods)
+    backend_relay_pods_1 = kube_utils.get_pods("status-backend-relay", "status-go-test")
+    backend_relay_pods_2 = kube_utils.get_pods("status-backend-relay-2", "status-go-test")
+    relay_nodes_1 = await setup_status.initialize_nodes_application(backend_relay_pods_1)
+    relay_nodes_2 = await setup_status.initialize_nodes_application(backend_relay_pods_2)
 
-    name = f"test_community_{''.join(random.choices(string.ascii_letters, k=10))}"
-    logger.info(f"Creating community {name}")
-    response = await relay_nodes["status-backend-relay-0"].wakuext_service.create_community(name)
-    community_id = response.get("result", {}).get("communities", [{}])[0].get("id")
-    logger.info(f"Community {name} created with ID {community_id}")
+    owner = "status-backend-relay-0"
+    to_include = [key for key in relay_nodes_1.keys() if key != owner]
+    community_setup_result = await create_community_util(relay_nodes_1, owner, to_include, accept_community_requests)
+    await asyncio.sleep(10)
 
-    owner = relay_nodes["status-backend-relay-0"]
-    nodes = [key for key in relay_nodes.keys() if key != "status-backend-relay-0"]
-    nodes_250 = nodes[:250]
-    join_ids = await request_join_nodes_to_community(relay_nodes, nodes_250, community_id)
-    chat_id = await accept_community_requests(owner, join_ids)
+    # We send just from one node to avoid huge load
+    _ = await asyncio.gather(*[inject_messages(relay_nodes_1[owner], 10, community_setup_result.chat_id, 18)])
 
-    await inject_messages(owner, 10, community_id+chat_id, 30)
     await asyncio.sleep(10)
 
     logger.info("Shutting down node connections")
-    await asyncio.gather(*[node.shutdown() for node in relay_nodes.values()])
-    logger.info("Finished store_performance")
+    await asyncio.gather(*[node.shutdown() for node in relay_nodes_1.values()])
+    await asyncio.gather(*[node.shutdown() for node in relay_nodes_2.values()])
+    logger.info("Finished isolated_traffic_chat_messages_1")
 
 
 async def isolated_traffic_chat_messages_2():
