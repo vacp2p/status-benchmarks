@@ -23,22 +23,14 @@ async def idle_relay(consumers: int = 4):
     backend_relay_pods = kube_utils.get_pods("status-backend-relay", "status-go-test")
     relay_nodes = await initialize_nodes_application(backend_relay_pods)
 
+    for node_id, node in relay_nodes.items():
+        peers = await node.wakuext_service.peers()
+        logger.info(f"Peers from {node_id}: {peers}")
+
     alice = "status-backend-relay-0"
     friends = [key for key in relay_nodes.keys() if key != alice]
 
-    results_queue: asyncio.Queue[CollectedItem | None] = asyncio.Queue()
-    finished_evt = asyncio.Event()
-
-    send_task = asyncio.create_task(send_friend_requests(relay_nodes, results_queue, [alice], friends, finished_evt))
-    accept_task = asyncio.create_task(accept_friend_requests(relay_nodes, results_queue, consumers))
-    cleanup_task = asyncio.create_task(cleanup_queue_on_event(finished_evt, results_queue, 4))
-    _, delays_queue, _ = await asyncio.gather(send_task, accept_task, cleanup_task)
-
-
-    delays: list[float] = []
-    while not delays_queue.empty():
-        delays.append(delays_queue.get_nowait())
-
+    delays = await send_friend_requests_util(relay_nodes, [alice], friends, accept_friend_requests, consumers)
     logger.info(f"Delays are: {delays}")
 
     logger.info("Shutting down node connections")
