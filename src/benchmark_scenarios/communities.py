@@ -150,22 +150,23 @@ async def message_sending():
     backend_relay_pods = kube_utils.get_pods("status-backend-relay", "status-go-test")
     relay_nodes = await setup_status.initialize_nodes_application(backend_relay_pods)
 
-    name = f"test_community_{''.join(random.choices(string.ascii_letters, k=10))}"
-    logger.info(f"Creating community {name}")
-    response = await relay_nodes["status-backend-relay-0"].wakuext_service.create_community(name)
-    community_id = response.get("result", {}).get("communities", [{}])[0].get("id")
-    logger.info(f"Community {name} created with ID {community_id}")
+    community_owner = "status-backend-relay-0"
+    nodes_to_join = [key for key in relay_nodes.keys() if key != community_owner]
 
-    owner = relay_nodes["status-backend-relay-0"]
-    nodes = [key for key in relay_nodes.keys() if key != "status-backend-relay-0"]
-    join_ids = await request_join_nodes_to_community(relay_nodes, nodes, community_id)
-    chat_id = await accept_community_requests(owner, join_ids)
+    community_setup_result = await create_community_util(relay_nodes, community_owner, nodes_to_join, accept_community_requests)
 
-    await asyncio.gather(*[inject_messages(relay_nodes[node], 5, community_id+chat_id, 100) for node in nodes[:100]])
+    logger.info("Waiting 30 seconds")
+    await asyncio.sleep(30)
+
+    await asyncio.gather(
+        *[inject_messages(relay_nodes[node], 5, community_setup_result.chat_id, 36) for node in nodes_to_join[:7]])
+
+    logger.info("Waiting 30 seconds")
+    await asyncio.sleep(30)
 
     logger.info("Shutting down node connections")
     await asyncio.gather(*[node.shutdown() for node in relay_nodes.values()])
-    logger.info("Finished store_performance")
+    logger.info("Finished message_sending")
 
 
 async def request_to_join_community_mix():
