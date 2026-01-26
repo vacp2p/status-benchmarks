@@ -44,24 +44,45 @@ async def initialize_nodes_application(pod_names: list[str], wakuV2LightClient=F
     return nodes_status
 
 
-async def request_join_nodes_to_community(backend_nodes: dict[str, StatusBackend], nodes_to_join: list[str], community_id: str):
-    async def _request_to_join_to_community(node: StatusBackend, community_id: str) -> str:
+async def request_join_nodes_to_community(backend_nodes: NodesInformation,
+                                          results_queue: asyncio.Queue[CollectedItem | None],
+                                          nodes_to_join: list[str],
+                                          community_id: str,
+                                          finished_evt: asyncio.Event,
+                                          intermediate_delay: float = 1, max_in_flight: int = 0):
+    async def _request_to_join_to_community(backend_nodes: NodesInformation, sender: str, community_id: str) -> ResultEntry:
         try:
-            _ = await node.wakuext_service.fetch_community(community_id)
-            response_to_join = await node.wakuext_service.request_to_join_community(community_id)
+            # We have "try database true" in fetch_community, if not we will need to wait for the response
+            _ = await backend_nodes[sender].wakuext_service.fetch_community(community_id)
+            response_to_join = await backend_nodes[sender].wakuext_service.request_to_join_community(community_id)
+            # TODO this response should come with timestamp
             join_id = response_to_join.get("result", {}).get("requestsToJoinCommunity", [{}])[0].get("id")
+            request_result = ResultEntry(sender=sender, receiver="",
+                                         timestamp=time.time_ns(),
+                                         result=join_id)
 
-            return join_id
+            return request_result
 
-        except AssertionError as e:
-            logger.error(f"Error requesting to join on StatusBackend {node.base_url}: {e}")
+        except (AssertionError, TimeoutError) as e:
+            logger.error(f"Error requesting to join on StatusBackend {sender}: {e}")
             raise
 
-    join_ids = await asyncio.gather(*[_request_to_join_to_community(backend_nodes[node], community_id) for node in nodes_to_join])
+    done_queue: asyncio.Queue[TaskResult | None] = asyncio.Queue()
+
+    workers_to_launch = [
+        partial(_request_to_join_to_community, backend_nodes, requester, community_id)
+        for requester in nodes_to_join
+    ]
+
+    logger.info(f"Sending community requests from {len(nodes_to_join)} nodes")
+    collector_task = asyncio.create_task(
+        collect_results_from_tasks(done_queue, results_queue, len(workers_to_launch), finished_evt))
+    launcher_task = asyncio.create_task(
+        launch_workers(workers_to_launch, done_queue, intermediate_delay, max_in_flight))
+
+    await asyncio.gather(launcher_task, collector_task)
 
     logger.info(f"All {len(nodes_to_join)} nodes have requested joined a community successfully to {community_id}")
-
-    return join_ids
 
 
 async def login_nodes(backend_nodes: dict[str, StatusBackend], include: list[str]):
