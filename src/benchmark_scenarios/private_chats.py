@@ -38,19 +38,23 @@ async def idle_relay(consumers: int = 4):
     logger.info("Finished idle_relay")
 
 
-async def idle_light():
+async def idle_light(consumers: int = 4):
     # 1 light node alice
     # 100 light nodes - friends
-    # friends have accepted contact request with alice
+    # friends have accepted contact request with alice, who accepted it
 
     kube_utils.setup_kubernetes_client()
     backend_light_pods = kube_utils.get_pods("status-backend-light", "status-go-test")
-    light_nodes = await initialize_nodes_application(backend_light_pods)
+    light_nodes = await initialize_nodes_application(backend_light_pods, wakuV2LightClient=True)
+
+    await asyncio.sleep(10)
 
     alice = "status-backend-light-0"
     friends = [key for key in light_nodes.keys() if key != alice]
-    requests_made = await send_friend_requests(light_nodes, [alice], friends)
-    _ = await accept_friend_requests(light_nodes, requests_made)
+
+    delays = await send_friend_requests_util(light_nodes, [alice], friends, accept_friend_requests, consumers)
+
+    logger.info(f"Delays are: {delays}")
 
     logger.info("Shutting down node connections")
     await asyncio.gather(*[node.shutdown() for node in light_nodes.values()])
