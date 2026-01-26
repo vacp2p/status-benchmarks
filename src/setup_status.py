@@ -98,19 +98,20 @@ async def login_nodes(backend_nodes: dict[str, StatusBackend], include: list[str
     await asyncio.gather(*[_login_node(backend_nodes[node]) for node in include])
 
 
-# TODO add an accept rate
-async def accept_community_requests(node_owner: StatusBackend, join_ids: list[str]):
-    async def _accept_community_request(node: StatusBackend, join_id: str) -> str:
+async def accept_community_requests(node_owner: StatusBackend,  results_queue: asyncio.Queue[CollectedItem | None],
+                                        consumers: int):
+    async def _accept_community_request(queue_result: CollectedItem):
         max_retries = 40
         retry_interval = 0.5
+        function_name, result_entry = queue_result
 
         for attempt in range(max_retries):
             try:
-                response = await node.wakuext_service.accept_request_to_join_community(join_id)
+                response = await node_owner.wakuext_service.accept_request_to_join_community(result_entry.result)
                 # We need to find the correspondant community of the join_id. We retrieve first chat because should be
                 # the only one. We do this because there can be several communities if we reuse the node.
                 # TODO why it returns the information of all communities? Getting the chat this way seems weird
-                msgs = await get_messages_by_message_type(response, "requestsToJoinCommunity", join_id)
+                msgs = await get_messages_by_message_type(response, "requestsToJoinCommunity", result_entry.result)
                 for community in response.get("result").get("communities"):
                     # We always have one msg
                     if community.get("id") == msgs[0].get("communityId"):
@@ -119,16 +120,23 @@ async def accept_community_requests(node_owner: StatusBackend, join_ids: list[st
             except Exception as e:
                 logging.error(f"Attempt {attempt + 1}/{max_retries}: Unexpected error: {e}")
                 time.sleep(retry_interval)
+                await asyncio.sleep(2)
 
         raise Exception(
             f"Failed to accept request to join community in {max_retries * retry_interval} seconds."
         )
 
-    chat_ids = await asyncio.gather(*[_accept_community_request(node_owner, join_id) for join_id in join_ids])
-    logger.info(f"All {len(join_ids)} nodes have been accepted successfully")
+    delays_queue: asyncio.Queue[float] = asyncio.Queue()
+    logger.info(f"Accepting community requests from nodes")
+    workers = [asyncio.create_task(
+        function_on_queue_item(results_queue, _accept_community_request, delays_queue))
+        for _ in range(consumers)]
+    await asyncio.gather(*workers)
 
-    # Same chat ID for everyone
-    return chat_ids[0]
+    logger.info(f"All nodes have been accepted successfully")
+
+    return delays_queue
+
 
 async def reject_community_requests(owner: StatusBackend, join_ids: list[str]):
     async def _reject_community_request(node: StatusBackend, join_id: str):
