@@ -61,9 +61,9 @@ async def idle_light(consumers: int = 4):
     logger.info("Finished idle_light")
 
 
-async def contact_request():
-    # relay: 25 requesters, 60 requested (20 accept, 20 reject, 20 ignore), 25 idle
-    # light: 25 requesters, 60 requested (20 accept, 20 reject, 20 ignore), 25 idle
+async def contact_request(consumers: int = 4):
+    # relay: 25 requesters, 60 requested (20 accept, 20 reject, 20 ignore), 25 idle ## 5 12 5 (4,4,4)
+    # light: 25 requesters, 60 requested (20 accept, 20 reject, 20 ignore), 25 idle ## 5 12 5 (4,4,4)
     # -> Each requester send a contact request to 3 nodes in the requested set (random selection)
     # -> accepting nodes in the set accept the request
     # -> rejecting nodes rejects the request
@@ -79,37 +79,29 @@ async def contact_request():
         setup_status.initialize_nodes_application(backend_light_pods, wakuV2LightClient=True)
     )
 
+    await asyncio.sleep(20)
+
     backend_relay_pods = [pod_name.split(".")[0] for pod_name in backend_relay_pods]
     backend_light_pods = [pod_name.split(".")[0] for pod_name in backend_light_pods]
 
-    relay_requesters = backend_relay_pods[:25]
-    light_requesters = backend_light_pods[:25]
-    relay_requested = backend_relay_pods[25:85]
-    light_requested = backend_light_pods[25:85]
+    requesters = backend_relay_pods[:25] + backend_light_pods[:25]
+    receiver_accept = backend_relay_pods[25:45] + backend_light_pods[25:45]
+    receiver_reject = backend_relay_pods[45:65] + backend_light_pods[45:65]
+    receiver_ignore = backend_relay_pods[65:85] + backend_light_pods[65:85]
 
-    # Returns a list of tuples like: [(sender name, {receiver: request_id, ...})]
-    relay_friend_requests, light_friend_requests = await asyncio.gather(
-        *[send_friend_requests(relay_nodes, [requester], random.sample(relay_requested, 3)) for requester in
-          relay_requesters],
-        *[send_friend_requests(light_nodes, [requester], random.sample(light_requested, 3)) for requester in
-          light_requesters]
-    )
+    random.shuffle(requesters)
+    random.shuffle(receiver_accept)
+    random.shuffle(receiver_reject)
 
-    to_accept_requests_relay = random.sample(relay_friend_requests, 20)
-    remaining_relay = list(set(relay_friend_requests) - set(to_accept_requests_relay))
-    to_reject_requests_relay = random.sample(remaining_relay, 20)
+    logger.info("Sending friend requests")
+    delays_accept = await send_friend_requests_util(light_nodes, requesters, receiver_accept, accept_friend_requests, 3, consumers)
+    delays_reject = await send_friend_requests_util(light_nodes, requesters, receiver_reject, decline_friend_requests, 3, consumers)
+    _ = await send_friend_requests_util(light_nodes, requesters, receiver_reject, None)
 
-    to_accept_requests_light = random.sample(light_friend_requests, 20)
-    remaining_light = list(set(light_friend_requests) - set(to_accept_requests_light))
-    to_reject_requests_light = random.sample(remaining_light, 20)
+    logger.info(f"Accept delays ({len(delays_accept)}) are: {delays_accept}")
+    logger.info(f"Reject delays ({len(delays_reject)})  are: {delays_reject}")
 
-
-    _ = await asyncio.gather(
-        *[accept_friend_requests(relay_nodes, to_accept_requests_relay)],
-        *[accept_friend_requests(light_nodes, to_accept_requests_light)],
-        *[decline_friend_requests(relay_nodes, to_reject_requests_relay)],
-        *[decline_friend_requests(light_nodes, to_reject_requests_light)],
-    )
+    await asyncio.sleep(10)
 
     logger.info("Shutting down node connections")
     await asyncio.gather(*[node.shutdown() for node in relay_nodes.values()],
