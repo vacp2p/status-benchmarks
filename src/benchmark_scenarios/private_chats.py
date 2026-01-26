@@ -109,7 +109,7 @@ async def contact_request(consumers: int = 4):
     logger.info("Finished contact_request")
 
 
-async def send_one_to_one_message():
+async def send_one_to_one_message(consumers: int = 4):
     # 50 sending nodes
     # 50 receiving nodes
     # 50 idle nodes
@@ -119,16 +119,32 @@ async def send_one_to_one_message():
     backend_relay_pods = kube_utils.get_pods("status-backend-relay", "status-go-test")
     relay_nodes = await initialize_nodes_application(backend_relay_pods)
 
+    logger.info("Waiting 60 seconds after nodes initialization")
+    await asyncio.sleep(60)
+
     backend_relay_pods = [pod_name.split(".")[0] for pod_name in backend_relay_pods]
 
     senders = backend_relay_pods[:50]
-    receiving = backend_relay_pods[50:100]
+    receivers = backend_relay_pods[50:100]
 
-    friend_requests = await send_friend_requests(relay_nodes, senders, receiving)
-    _ = await accept_friend_requests(relay_nodes, friend_requests)
+    delays = await send_friend_requests_util(relay_nodes, senders, receivers, accept_friend_requests, consumers)
 
-    await asyncio.gather(*[inject_messages_one_to_one(relay_nodes[senders[i]], 10, relay_nodes[receiving[i]].public_key, 60) for i in range(50)])
+    logger.info("Waiting 20 seconds after accepting requests")
+    await asyncio.sleep(10)
 
+    await asyncio.gather(*[inject_messages_one_to_one(relay_nodes[senders[i]], 10, relay_nodes[receivers[i]].public_key, 18) for i in range(50)])
+
+    logger.info("Waiting 20 seconds")
+    await asyncio.sleep(20)
+
+    expected_messages = {f"Message {i}" for i in range(7)}
+    for receiver in receivers:
+        received_messages = {tup[1] for tup in relay_nodes[receiver].signal.signal_queues["messages.new"].messages if tup[1].startswith("Message ")}
+        missing_messages = expected_messages - received_messages
+        if missing_messages:
+            logger.error(f"{receiver} is missing messages, got {len(received_messages)}/{len(expected_messages)} messages")
+
+    # TODO: Retrieve latencies
     logger.info("Shutting down node connections")
     await asyncio.gather(*[node.shutdown() for node in relay_nodes.values()])
     logger.info("Finished send_one_to_one_message")
