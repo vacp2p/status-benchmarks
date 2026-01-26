@@ -181,26 +181,21 @@ async def request_to_join_community_mix():
     backend_relay_pods = kube_utils.get_pods("status-backend-relay", "status-go-test")
     relay_nodes = await setup_status.initialize_nodes_application(backend_relay_pods)
 
-    name = f"test_community_{''.join(random.choices(string.ascii_letters, k=10))}"
-    logger.info(f"Creating community {name}")
-    response = relay_nodes["status-backend-relay-0"].wakuext_service.create_community(name)
-    community_id = response.get("result", {}).get("communities", [{}])[0].get("id")
-    logger.info(f"Community {name} created with ID {community_id}")
-
-    owner = relay_nodes["status-backend-relay-0"]
+    owner = "status-backend-relay-0"
     nodes = [key for key in relay_nodes.keys() if key != "status-backend-relay-0"]
-    nodes_200 = nodes[:200]
-    nodes_300 = nodes[200:]
-    join_ids = await request_join_nodes_to_community(relay_nodes, nodes_200, community_id)
-    _ = await accept_community_requests(owner, join_ids)
+    nodes_join = nodes[:12]
+    nodes_reject = nodes[12:]
+    community_accept_result = await create_community_util(relay_nodes, owner, nodes_join,
+                                                         accept_community_requests)
+    community_reject_result = await create_community_util(relay_nodes, owner, nodes_reject,
+                                                         reject_community_requests)
 
-    join_ids = await request_join_nodes_to_community(relay_nodes, nodes_300[:200], community_id)
-    _ = accept_community_requests(owner, join_ids[:100])
-    await reject_community_requests(owner, join_ids[:100]) # TODO fails because can't find community?
+    logger.info("Waiting 30 seconds")
+    await asyncio.sleep(30)
 
     logger.info("Shutting down node connections")
     await asyncio.gather(*[node.shutdown() for node in relay_nodes.values()])
-    logger.info("Finished store_performance")
+    logger.info("Finished request_to_join_community_mix")
 
 
 async def isolated_traffic_chat_messages_1():
