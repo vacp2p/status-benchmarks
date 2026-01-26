@@ -95,39 +95,51 @@ async def store_performance():
         setup_status.initialize_nodes_application(backend_light_pods, wakuV2LightClient=True)
     )
 
-    name = f"test_community_{''.join(random.choices(string.ascii_letters, k=10))}"
-    logger.info(f"Creating community {name}")
-    response = await relay_nodes["status-backend-relay-0"].wakuext_service.create_community(name)
-    community_id = response.get("result", {}).get("communities", [{}])[0].get("id")
-    logger.info(f"Community {name} created with ID {community_id}")
+    await asyncio.sleep(10)
+    status_nodes = {**relay_nodes, **light_nodes}
+    community_owner = "status-backend-relay-0"
+    nodes_to_join = [key for key in status_nodes.keys() if key != community_owner]
 
-    owner = relay_nodes["status-backend-relay-0"]
-    nodes = [key for key in relay_nodes.keys() if key != "status-backend-relay-0"]
+    community_setup_result = await create_community_util(status_nodes, community_owner, nodes_to_join, accept_community_requests)
 
-    joins_ids_relay, join_ids_light = await asyncio.gather(
-        request_join_nodes_to_community(relay_nodes, nodes, community_id),
-        request_join_nodes_to_community(light_nodes, light_nodes.keys(), community_id)
-    )
+    await asyncio.gather(*[status_nodes[node].logout() for node in nodes_to_join])
 
-    chat_id_relays, chat_id_lights = await asyncio.gather(
-        accept_community_requests(owner, joins_ids_relay),
-        accept_community_requests(owner, join_ids_light),
-    )
+    await inject_messages(status_nodes[community_owner], 1, community_setup_result.chat_id, 30)
 
-    await asyncio.gather(*[relay_nodes[node].logout() for node in nodes])
-    await asyncio.gather(*[node.logout() for node in light_nodes.values()])
+    await asyncio.sleep(20)
 
-    await inject_messages(owner, 1, community_id + chat_id_relays, 30)
+    await login_nodes(status_nodes, nodes_to_join)
 
-    await asyncio.gather(*[relay_nodes[node].login(relay_nodes[node].find_key_uid()) for node in nodes])
-    await asyncio.gather(*[node.login(node.find_key_uid()) for node in light_nodes.values()])
+    await asyncio.sleep(40)  # Some time to receive signals
 
-    await asyncio.sleep(10) # Some time to receive signals
+    light_times = []
+    relay_times = []
+
+    for relay_node in relay_nodes.values():
+        relay_times.append(
+            relay_node.signal.signal_queues[SignalType.MESSAGES_NEW.value].messages[0][0] - relay_node.last_login)
+    logger.info(f"Average relay time is {sum(relay_times) / len(relay_times)} seconds")
+    logger.info(f"Relay Times: {relay_times}")
+    for light_node in light_nodes.values():
+        light_times.append(
+            light_node.signal.signal_queues[SignalType.MESSAGES_NEW.value].messages[0][0] - light_node.last_login)
+    logger.info(f"Average light time is {sum(light_times) / len(light_times)} seconds")
+    logger.info(f"Light Times: {light_times}")
+
+    relay_messages = []
+    for relay_node in relay_nodes.values():
+        relay_messages.append(len(relay_node.signal.signal_queues[SignalType.MESSAGES_NEW.value].messages))
+    logger.info(f"Relay messages received: {relay_messages} for {len(relay_messages)} relay nodes")
+
+    light_messages = []
+    for light_node in light_nodes.values():
+        light_messages.append(len(light_node.signal.signal_queues[SignalType.MESSAGES_NEW.value].messages))
+    logger.info(f"Light messages received: {light_messages} for {len(light_messages)} light nodes")
 
     logger.info("Shutting down node connections")
-    await asyncio.gather(*[node.shutdown() for node in relay_nodes.values()])
-    await asyncio.gather(*[node.shutdown() for node in light_nodes.values()])
+    await asyncio.gather(*[node.shutdown() for node in status_nodes.values()])
     logger.info("Finished store_performance")
+
 
 async def message_sending():
     # 1 community owner
