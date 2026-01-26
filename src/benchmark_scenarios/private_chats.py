@@ -6,12 +6,13 @@ import random
 # Project Imports
 import src.logger
 from src import kube_utils, setup_status
-from src.async_utils import CollectedItem, cleanup_queue_on_event
+from src.benchmark_scenarios.scenario_utils import send_friend_requests_util
 from src.inject_messages import inject_messages_one_to_one, inject_messages_group_chat
-from src.setup_status import initialize_nodes_application, send_friend_requests, accept_friend_requests, \
+from src.setup_status import initialize_nodes_application, accept_friend_requests, \
     decline_friend_requests, create_group_chat, add_contacts
 
 logger = logging.getLogger(__name__)
+
 
 async def idle_relay(consumers: int = 4):
     # 1 relay node alice
