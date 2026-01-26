@@ -130,6 +130,7 @@ class StatusBackend:
             "customizationColor": "red",
             # Logs config
             "logEnabled": True,
+            "logToStderr": True,
             "logLevel": "DEBUG",
             # Waku config
             "wakuV2LightClient": kwargs.get("wakuV2LightClient", False),

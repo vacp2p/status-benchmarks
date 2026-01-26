@@ -30,3 +30,4 @@ class SignalType(Enum):
     NODE_STARTED = "node.started"
     NODE_LOGIN = "node.login"
     NODE_LOGOUT = "node.stopped"
+    COMMUNITY_IMPORTING_HISTORY_ARCHIVE_MESSAGES_FINISHED = "community.downloadingHistoryArchivesFinished"
