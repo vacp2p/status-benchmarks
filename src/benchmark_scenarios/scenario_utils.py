@@ -4,7 +4,7 @@ import random
 import logging
 import string
 from dataclasses import dataclass
-from typing import List, Callable, Optional
+from typing import List, Callable, Optional, Awaitable
 
 # Project Imports
 import src.logger
@@ -15,6 +15,9 @@ from src.setup_status import request_join_nodes_to_community, NodesInformation, 
 logger = logging.getLogger(__name__)
 
 
+Action = Callable[[NodesInformation, asyncio.Queue[CollectedItem|None], int], Awaitable[asyncio.Queue[float]]]
+
+
 @dataclass(frozen=True)
 class CommunitySetupResult:
     community_id: str
@@ -23,7 +26,7 @@ class CommunitySetupResult:
 
 
 async def create_community_util(status_nodes: NodesInformation, owner: str, to_include: List[str],
-                                action: Optional[Callable], intermediate_delay: int = 1,
+                                action: Action, intermediate_delay: int = 1,
                                 consumers: int = 4) -> Optional[CommunitySetupResult]:
     name = f"test_community_{''.join(random.choices(string.ascii_letters, k=10))}"
     logger.info(f"Creating community {name}")
@@ -60,7 +63,7 @@ async def create_community_util(status_nodes: NodesInformation, owner: str, to_i
     return CommunitySetupResult(community_id=community_id, chat_id=chat_id, join_delays=join_delays)
 
 
-async def send_friend_requests_util(relay_nodes: NodesInformation, from_nodes, to_nodes, action: Optional[Callable],
+async def send_friend_requests_util(relay_nodes: NodesInformation, from_nodes, to_nodes, action: Action,
                                     cap_num_receivers: Optional[int] = None, consumers: int = 4) -> List[float]:
     results_queue: asyncio.Queue[CollectedItem | None] = asyncio.Queue()
     finished_evt = asyncio.Event()
