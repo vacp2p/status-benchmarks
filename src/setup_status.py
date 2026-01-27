@@ -232,7 +232,7 @@ async def accept_friend_requests(nodes: dict[str, StatusBackend], results_queue:
 
     delays_queue: asyncio.Queue[float] = asyncio.Queue()
 
-    logger.info(f"Accepting friend requests from {len(nodes)}<-wrong nodes")
+    logger.info(f"Accepting friend requests.")
     workers = [asyncio.create_task(
         function_on_queue_item(results_queue, _accept_friend_request, delays_queue))
         for _ in range(consumers)]
