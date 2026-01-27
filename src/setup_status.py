@@ -99,7 +99,7 @@ async def login_nodes(backend_nodes: dict[str, StatusBackend], include: list[str
 
 
 async def accept_community_requests(node_owner: StatusBackend,  results_queue: asyncio.Queue[CollectedItem | None],
-                                        consumers: int):
+                                        consumers: int) -> asyncio.Queue[float]:
     async def _accept_community_request(queue_result: CollectedItem):
         max_retries = 40
         retry_interval = 0.5
