@@ -28,6 +28,21 @@ class CommunitySetupResult:
 async def create_community_util(status_nodes: NodesInformation, owner: str, to_include: List[str],
                                 action: Action, intermediate_delay: int = 1,
                                 consumers: int = 4) -> Optional[CommunitySetupResult]:
+    """
+    Utility function to create a community specifying and owner, and a list of nodes to send requests. Action will
+    be performed by the invited nodes, which will answer to the requests with the action. At the moment,
+    this can be either accept the request, reject the request, or simply ignore the request.
+    Consumers represent the number of asyncio tasks that will answer to the requests with the action. Because this is
+    heavily I/O dependent, there is no need to do fine granular concurrent operations.
+
+    :param status_nodes: Nodes information for community setup
+    :param owner: Node owner for community creation
+    :param to_include: List of nodes to include in the community
+    :param action: Optional action to perform during community setup
+    :param intermediate_delay: Delay between community node requests in seconds
+    :param consumers: Number of asyncio tasks that will answer to the requests with the action
+    :return: Community setup result or None if setup fails
+    """
     name = f"test_community_{''.join(random.choices(string.ascii_letters, k=10))}"
     logger.info(f"Creating community {name}")
     node_owner = status_nodes[owner]
