@@ -56,7 +56,7 @@ async def request_join_nodes_to_community(backend_nodes: NodesInformation,
             _ = await backend_nodes[sender].wakuext_service.fetch_community(community_id)
             response_to_join = await backend_nodes[sender].wakuext_service.request_to_join_community(community_id)
             # TODO this response should come with timestamp
-            join_id = response_to_join.get("result", {}).get("requestsToJoinCommunity", [{}])[0].get("id")
+            join_id = response_to_join["result"]["requestsToJoinCommunity"][0]["id"]
             request_result = ResultEntry(sender=sender, receiver="",
                                          timestamp=time.time_ns(),
                                          result=join_id)

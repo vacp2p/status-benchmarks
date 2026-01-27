@@ -47,8 +47,8 @@ async def create_community_util(status_nodes: NodesInformation, owner: str, to_i
     logger.info(f"Creating community {name}")
     node_owner = status_nodes[owner]
     response = await node_owner.wakuext_service.create_community(name)
-    community_id = response.get("result", {}).get("communities", [{}])[0].get("id")
-    chat_id = response.get("result", {}).get("chats", [{}])[0].get("id")
+    community_id = response["result"]["communities"][0]["id"]
+    chat_id = response["result"]["chats"][0]["id"]
     logger.info(f"Community {name} created with ID {community_id}")
 
     results_accept_queue: asyncio.Queue[CollectedItem | None] = asyncio.Queue()
