@@ -166,6 +166,11 @@ async def send_friend_requests(nodes: NodesInformation,
                                finished_evt: asyncio.Event,
                                cap_num_receivers: int | None = None,
                                intermediate_delay: float = 1, max_in_flight: int = 0):
+    """
+    This function sends friend requests from a list of senders to a list of receivers. In order to avoid big scenarios
+    like 100 senders to 100 receivers, that can take a lot of time, cap_num_receivers is used to limit the number of
+    requests, so each sender performs only cap_num_receivers requests.
+    """
     async def _send_friend_request(nodes: NodesInformation, sender: str, receiver: str):
         response = await nodes[sender].wakuext_service.send_contact_request(nodes[receiver].public_key,
                                                                             "Friend Request")
@@ -184,6 +189,8 @@ async def send_friend_requests(nodes: NodesInformation,
         partial(_send_friend_request, nodes, sender, receiver)
         for i, sender in enumerate(senders)
         for receiver in
+        # We want to avoid slow scenarios if we can, so each sender will perform only cap_num_receivers requests,
+        # but also on different receivers.
         (receivers if not cap_num_receivers else receivers[i * cap_num_receivers: (i + 1) * cap_num_receivers])
     ]
 
