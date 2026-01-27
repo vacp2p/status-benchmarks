@@ -52,7 +52,7 @@ async def request_join_nodes_to_community(backend_nodes: NodesInformation,
                                           intermediate_delay: float = 1, max_in_flight: int = 0):
     async def _request_to_join_to_community(backend_nodes: NodesInformation, sender: str, community_id: str) -> ResultEntry:
         try:
-            # We have "try database true" in fetch_community, if not we will need to wait for the response
+            # We have "tryDatabase": True in fetch_community, if not we will need to wait for the response
             _ = await backend_nodes[sender].wakuext_service.fetch_community(community_id)
             response_to_join = await backend_nodes[sender].wakuext_service.request_to_join_community(community_id)
             # TODO this response should come with timestamp
