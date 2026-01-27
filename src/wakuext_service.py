@@ -18,6 +18,11 @@ class WakuextAsyncService(AsyncService):
             assert json_response["error"]["message"] == "messenger already started"
             return
 
+    async def peers(self):
+        params = []
+        json_response = await self.rpc_request("peers", params)
+        return json_response
+
     async def create_community(self, name: str, color="#ffffff", membership: int = 3) -> dict:
         # TODO check what is membership = 3
         params = [{"membership": membership, "name": name, "color": color, "description": name}]
@@ -71,7 +76,7 @@ class WakuextAsyncService(AsyncService):
         return json_response
 
     async def create_group_chat_with_members(self, pubkey_list: list, group_chat_name: str):
-        params = [None, group_chat_name, pubkey_list]
+        params = [group_chat_name, pubkey_list]
         json_response = await self.rpc_request("createGroupChatWithMembers", params)
         return json_response
 

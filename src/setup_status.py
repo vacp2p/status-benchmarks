@@ -5,7 +5,6 @@ import random
 import string
 import time
 from functools import partial
-from typing import List
 
 # Project Imports
 from src.async_utils import launch_workers, collect_results_from_tasks, TaskResult, CollectedItem, \
@@ -243,13 +242,13 @@ async def create_group_chat(admin: StatusBackend, receivers: list[str]):
     name = f"private_group_{''.join(random.choices(string.ascii_letters, k=10))}"
     logger.info(f"Creating private group {name}")
     response = await admin.wakuext_service.create_group_chat_with_members(receivers, name)
-    group_id = response.get("result", {}).get("communities", [{}])[0].get("id")
+    group_id = response.get("result", {}).get("chats")[0].get("id")
     logger.info(f"Group {name} created with ID {group_id}")
 
     return group_id
 
 
-async def get_messages_by_content_type(response: dict, content_type: str,  message_pattern: str="") -> list[dict]:
+async def get_messages_by_content_type(response: dict, content_type: int, message_pattern: str = "") -> list[dict]:
     matched_messages = []
     messages = response.get("result", {}).get("messages", [])
     for message in messages:

@@ -48,6 +48,7 @@ async def launch_workers(worker_tasks: list[partial], done_queue: asyncio.Queue[
         fut.add_done_callback(_on_done)
 
         if intermediate_delay:
+            logger.debug(f"Waiting {intermediate_delay} seconds before launching next task")
             await asyncio.sleep(intermediate_delay)
 
 
@@ -62,7 +63,7 @@ async def collect_results_from_tasks(done_queue: asyncio.Queue[TaskResult | None
             results_queue.put_nowait((partial_object.func.__name__, results))
         else:
             e, tb = payload  # from the launcher callback
-            logger.error(f"Task failed: {e}\n{tb}", e, tb)
+            logger.error("Task failed: %s\n%s", e, tb)
 
     logger.debug("Event is finished")
     finished_evt.set()
