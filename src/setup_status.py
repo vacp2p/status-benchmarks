@@ -44,24 +44,45 @@ async def initialize_nodes_application(pod_names: list[str], wakuV2LightClient=F
     return nodes_status
 
 
-async def request_join_nodes_to_community(backend_nodes: dict[str, StatusBackend], nodes_to_join: list[str], community_id: str):
-    async def _request_to_join_to_community(node: StatusBackend, community_id: str) -> str:
+async def request_join_nodes_to_community(backend_nodes: NodesInformation,
+                                          results_queue: asyncio.Queue[CollectedItem | None],
+                                          nodes_to_join: list[str],
+                                          community_id: str,
+                                          finished_evt: asyncio.Event,
+                                          intermediate_delay: float = 1, max_in_flight: int = 0):
+    async def _request_to_join_to_community(backend_nodes: NodesInformation, sender: str, community_id: str) -> ResultEntry:
         try:
-            _ = await node.wakuext_service.fetch_community(community_id)
-            response_to_join = await node.wakuext_service.request_to_join_community(community_id)
-            join_id = response_to_join.get("result", {}).get("requestsToJoinCommunity", [{}])[0].get("id")
+            # We have "tryDatabase": True in fetch_community, if not we will need to wait for the response
+            _ = await backend_nodes[sender].wakuext_service.fetch_community(community_id)
+            response_to_join = await backend_nodes[sender].wakuext_service.request_to_join_community(community_id)
+            # TODO this response should come with timestamp
+            join_id = response_to_join["result"]["requestsToJoinCommunity"][0]["id"]
+            request_result = ResultEntry(sender=sender, receiver="",
+                                         timestamp=time.time_ns(),
+                                         result=join_id)
 
-            return join_id
+            return request_result
 
-        except AssertionError as e:
-            logger.error(f"Error requesting to join on StatusBackend {node.base_url}: {e}")
+        except (AssertionError, TimeoutError) as e:
+            logger.error(f"Error requesting to join on StatusBackend {sender}: {e}")
             raise
 
-    join_ids = await asyncio.gather(*[_request_to_join_to_community(backend_nodes[node], community_id) for node in nodes_to_join])
+    done_queue: asyncio.Queue[TaskResult | None] = asyncio.Queue()
+
+    workers_to_launch = [
+        partial(_request_to_join_to_community, backend_nodes, requester, community_id)
+        for requester in nodes_to_join
+    ]
+
+    logger.info(f"Sending community requests from {len(nodes_to_join)} nodes")
+    collector_task = asyncio.create_task(
+        collect_results_from_tasks(done_queue, results_queue, len(workers_to_launch), finished_evt))
+    launcher_task = asyncio.create_task(
+        launch_workers(workers_to_launch, done_queue, intermediate_delay, max_in_flight))
+
+    await asyncio.gather(launcher_task, collector_task)
 
     logger.info(f"All {len(nodes_to_join)} nodes have requested joined a community successfully to {community_id}")
-
-    return join_ids
 
 
 async def login_nodes(backend_nodes: dict[str, StatusBackend], include: list[str]):
@@ -77,19 +98,20 @@ async def login_nodes(backend_nodes: dict[str, StatusBackend], include: list[str
     await asyncio.gather(*[_login_node(backend_nodes[node]) for node in include])
 
 
-# TODO add an accept rate
-async def accept_community_requests(node_owner: StatusBackend, join_ids: list[str]):
-    async def _accept_community_request(node: StatusBackend, join_id: str) -> str:
+async def accept_community_requests(node_owner: StatusBackend,  results_queue: asyncio.Queue[CollectedItem | None],
+                                        consumers: int) -> asyncio.Queue[float]:
+    async def _accept_community_request(queue_result: CollectedItem):
         max_retries = 40
         retry_interval = 0.5
+        function_name, result_entry = queue_result
 
         for attempt in range(max_retries):
             try:
-                response = await node.wakuext_service.accept_request_to_join_community(join_id)
+                response = await node_owner.wakuext_service.accept_request_to_join_community(result_entry.result)
                 # We need to find the correspondant community of the join_id. We retrieve first chat because should be
                 # the only one. We do this because there can be several communities if we reuse the node.
                 # TODO why it returns the information of all communities? Getting the chat this way seems weird
-                msgs = await get_messages_by_message_type(response, "requestsToJoinCommunity", join_id)
+                msgs = await get_messages_by_message_type(response, "requestsToJoinCommunity", result_entry.result)
                 for community in response.get("result").get("communities"):
                     # We always have one msg
                     if community.get("id") == msgs[0].get("communityId"):
@@ -98,16 +120,23 @@ async def accept_community_requests(node_owner: StatusBackend, join_ids: list[st
             except Exception as e:
                 logging.error(f"Attempt {attempt + 1}/{max_retries}: Unexpected error: {e}")
                 time.sleep(retry_interval)
+                await asyncio.sleep(2)
 
         raise Exception(
             f"Failed to accept request to join community in {max_retries * retry_interval} seconds."
         )
 
-    chat_ids = await asyncio.gather(*[_accept_community_request(node_owner, join_id) for join_id in join_ids])
-    logger.info(f"All {len(join_ids)} nodes have been accepted successfully")
+    delays_queue: asyncio.Queue[float] = asyncio.Queue()
+    logger.info(f"Accepting community requests from nodes")
+    workers = [asyncio.create_task(
+        function_on_queue_item(results_queue, _accept_community_request, delays_queue))
+        for _ in range(consumers)]
+    await asyncio.gather(*workers)
 
-    # Same chat ID for everyone
-    return chat_ids[0]
+    logger.info(f"All nodes have been accepted successfully")
+
+    return delays_queue
+
 
 async def reject_community_requests(owner: StatusBackend, join_ids: list[str]):
     async def _reject_community_request(node: StatusBackend, join_id: str):
@@ -135,15 +164,22 @@ async def send_friend_requests(nodes: NodesInformation,
                                results_queue: asyncio.Queue[CollectedItem | None],
                                senders: list[str], receivers: list[str],
                                finished_evt: asyncio.Event,
+                               cap_num_receivers: int | None = None,
                                intermediate_delay: float = 1, max_in_flight: int = 0):
-
+    """
+    This function sends friend requests from a list of senders to a list of receivers. In order to avoid big scenarios
+    like 100 senders to 100 receivers, that can take a lot of time, cap_num_receivers is used to limit the number of
+    requests, so each sender performs only cap_num_receivers requests.
+    """
     async def _send_friend_request(nodes: NodesInformation, sender: str, receiver: str):
-        response = await nodes[sender].wakuext_service.send_contact_request(nodes[receiver].public_key, "Friend Request")
+        response = await nodes[sender].wakuext_service.send_contact_request(nodes[receiver].public_key,
+                                                                            "Friend Request")
         # Get responses and filter by contact requests to obtain request ids
         request_response = await get_messages_by_content_type(response, MessageContentType.CONTACT_REQUEST.value)
         # Create a ResultEntry using the first response (there is always only one friend request)
-        request_result = ResultEntry(sender=sender, receiver=receiver, timestamp=int(request_response[0].get("timestamp")),
-                                 result=request_response[0].get("id"))
+        request_result = ResultEntry(sender=sender, receiver=receiver,
+                                     timestamp=int(request_response[0].get("timestamp")),
+                                     result=request_response[0].get("id"))
 
         return request_result
 
@@ -151,12 +187,18 @@ async def send_friend_requests(nodes: NodesInformation,
 
     workers_to_launch = [
         partial(_send_friend_request, nodes, sender, receiver)
-        for sender in senders
-        for receiver in receivers
+        for i, sender in enumerate(senders)
+        for receiver in
+        # We want to avoid slow scenarios if we can, so each sender will perform only cap_num_receivers requests,
+        # but also on different receivers.
+        (receivers if not cap_num_receivers else receivers[i * cap_num_receivers: (i + 1) * cap_num_receivers])
     ]
 
-    collector_task = asyncio.create_task(collect_results_from_tasks(done_queue, results_queue, len(workers_to_launch), finished_evt))
-    launcher_task = asyncio.create_task(launch_workers(workers_to_launch, done_queue, intermediate_delay, max_in_flight))
+    logger.info(f"Sending friend requests from {len(senders)} nodes to {len(receivers)} nodes")
+    collector_task = asyncio.create_task(
+        collect_results_from_tasks(done_queue, results_queue, len(workers_to_launch), finished_evt))
+    launcher_task = asyncio.create_task(
+        launch_workers(workers_to_launch, done_queue, intermediate_delay, max_in_flight))
 
     await asyncio.gather(launcher_task, collector_task)
 
@@ -167,20 +209,22 @@ async def accept_friend_requests(nodes: dict[str, StatusBackend], results_queue:
     async def _accept_friend_request(queue_result: CollectedItem):
         max_retries = 40
         retry_interval = 2
+        function_name, result_entry = queue_result
 
         for attempt in range(max_retries):
-            function_name, result_entry = queue_result
             try:
                 _ = await nodes[result_entry.receiver].wakuext_service.accept_contact_request(result_entry.result)
                 accepted_signal = f"@{nodes[result_entry.receiver].public_key} accepted your contact request"
-                message = await nodes[result_entry.sender].signal.find_signal_containing_string(SignalType.MESSAGES_NEW.value,
-                                                                                                event_string=accepted_signal,
-                                                                                                timeout=10)
+                message = await nodes[result_entry.sender].signal.find_signal_containing_string(
+                    SignalType.MESSAGES_NEW.value,
+                    event_string=accepted_signal,
+                    timeout=10)
                 return message[0] - int(result_entry.timestamp) // 1000  # Convert unix milliseconds to seconds
             except Exception as e:
-                logging.error(f"Attempt {attempt + 1}/{max_retries} from {result_entry.sender} to {result_entry.receiver}: "
-                              f"Unexpected error accepting friend request: {e}")
-                time.sleep(2)
+                logging.error(
+                    f"Attempt {attempt + 1}/{max_retries} from {result_entry.sender} to {result_entry.receiver}: "
+                    f"Unexpected error accepting friend request: {e}")
+                await asyncio.sleep(2)
 
         raise Exception(
             f"Failed to accept friend request in {max_retries * retry_interval} seconds."
@@ -188,6 +232,7 @@ async def accept_friend_requests(nodes: dict[str, StatusBackend], results_queue:
 
     delays_queue: asyncio.Queue[float] = asyncio.Queue()
 
+    logger.info(f"Accepting friend requests.")
     workers = [asyncio.create_task(
         function_on_queue_item(results_queue, _accept_friend_request, delays_queue))
         for _ in range(consumers)]
@@ -208,34 +253,38 @@ async def add_contacts(nodes: dict[str, StatusBackend], adders: list[str], conta
     logger.info(f"All {len(contacts)} contacts added to {len(adders)} nodes.")
 
 
-async def decline_friend_requests(nodes: dict[str, StatusBackend], requests: list[(str, dict[str, str])]):
-    # Flatten all tasks into a single list and execute them concurrently
-    async def _decline_friend_request(nodes: dict[str, StatusBackend], sender: str, receiver: str, request_id: str):
+async def decline_friend_requests(nodes: dict[str, StatusBackend], results_queue: asyncio.Queue[CollectedItem | None],
+                                 consumers: int) -> asyncio.Queue[float]:
+    async def _decline_friend_request(queue_result: CollectedItem):
         max_retries = 40
-        retry_interval = 0.5
+        retry_interval = 2
+        function_name, result_entry = queue_result
 
         for attempt in range(max_retries):
             try:
-                _ = await nodes[receiver].wakuext_service.decline_contact_request(request_id)
+                _ = await nodes[result_entry.receiver].wakuext_service.decline_contact_request(result_entry.result)
+                # TODO: Is there a signal for this?
                 return _
             except Exception as e:
-                logging.error(f"Attempt {attempt + 1}/{max_retries}: Unexpected error: {e}")
-                time.sleep(retry_interval)
+                logging.error(
+                    f"Attempt {attempt + 1}/{max_retries} from {result_entry.sender} to {result_entry.receiver}: "
+                    f"Unexpected error declining friend request: {e}")
+                await asyncio.sleep(2)
 
         raise Exception(
             f"Failed to reject friend request in {max_retries * retry_interval} seconds."
         )
 
-    _ = await asyncio.gather(
-        *[
-            _decline_friend_request(nodes, sender, receiver, request_id)
-            for sender, receivers in requests
-            for receiver, request_id in receivers.items()
-        ]
-    )
+    delays_queue: asyncio.Queue[float] = asyncio.Queue()
 
-    total_requests = sum(len(receivers) for _, receivers in requests)
-    logger.info(f"All {total_requests} friend requests rejected.")
+    logger.info(f"Declining friend requests from {len(nodes)}<-wrong nodes")
+    workers = [asyncio.create_task(
+        function_on_queue_item(results_queue, _decline_friend_request, delays_queue))
+        for _ in range(consumers)]
+
+    await asyncio.gather(*workers)
+
+    return delays_queue
 
 
 async def create_group_chat(admin: StatusBackend, receivers: list[str]):
